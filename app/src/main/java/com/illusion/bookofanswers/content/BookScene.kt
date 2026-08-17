@@ -51,7 +51,7 @@ private const val BOOK_ASSET = "asset://book.usdz"
  * 不要试图解析地推导它们，看着不对就改这里。
  */
 private val BOOK_POSITION = Vector3(0f, -0.1f, 0f)
-private val BOOK_ORIENTATION = EulerAngles(-60f, 180f, 0f)
+private val BOOK_ORIENTATION = EulerAngles(0f, -55f, 0f)
 
 /**
  * 加载书本模型、落位、挂碰撞体与可交互组件，并（若模型带动画）建好 [BookAnimator]。
