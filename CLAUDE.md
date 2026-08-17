@@ -33,19 +33,60 @@ or a plain panel just to make something compile.
 | File | Responsibility |
 | --- | --- |
 | `app/src/main/AndroidManifest.xml` | Declares the volumetric container: id, style=`2` (Volumetric), default size `960x960x960` dp, world scale, caption bar, base panel. This is where container behavior is tuned. |
-| `app/src/main/java/.../Main.kt` | `mainApp(scope)` — app entry graph: `DefaultWindowContainer { PicoTheme { HomeVolume() } }`. |
-| `app/src/main/java/.../content/HomeVolume.kt` | The actual volume content: loads `box.usdz`, sets up the 3D entity + SpatialUI text. Start feature work here. |
+| `app/src/main/java/.../Main.kt` | `mainApp(scope)` — app entry graph: `DefaultWindowContainer { PicoTheme { HomeVolume() } }`. **`PicoTheme` lives here** — do not add a second wrapper downstream. |
+| `app/src/main/java/.../content/HomeVolume.kt` | The one screen. Wires everything: `AnswerSource` → `BookState` → `BookScene` → `AnswerPanel`, and owns `detectSpatialTapGesture`. `PANEL_OFFSET` (panel placement) is here. Start feature work here. |
+| `app/src/main/java/.../content/BookScene.kt` | `loadBookScene()` — loads `book.usdz`, applies `BOOK_POSITION` / `BOOK_ORIENTATION`, attaches the box collider + `InteractableComponent`, and builds `BookAnimator` when the model has animation. Both transform constants are screenshot-calibrated; read their KDoc before touching them. |
+| `app/src/main/java/.../content/BookAnimator.kt` | Wraps the model's built-in open animation: `showClosed()` / `open()` / `closeThenOpen()`, plus segment timeout guarding. Owns the `AnimationPlaybackController`. |
+| `app/src/main/java/.../content/BookState.kt` | The interaction state machine (`BookPhase`: Closed → Opening → Revealed → Reshuffling). Pure Kotlin, unit-tested; holds the "swap the answer while the book is shut" rule. |
+| `app/src/main/java/.../content/AnswerPanel.kt` | The SpatialUI answer panel (`PanelContent.Prompt` / `AnswerText`), fixed-size with `backgroundMaterial`. Copy wording is fixed by design doc 4.4.1 — 「触碰」, not 「点击」/「揭晓」. |
+| `app/src/main/java/.../data/AnswerSource.kt` | Reads `assets/answers.txt` and builds the repository. **Must stay non-suspend and be called inside `remember { }`** — its broad `catch (Throwable)` would swallow `CancellationException` in a coroutine. |
+| `app/src/main/java/.../data/AnswerParser.kt` | Parses the corpus file into `Answer`s (dedupe / blank / comment handling). Unit-tested. |
+| `app/src/main/java/.../data/AnswerRepository.kt` | Random draw without immediate repeats. Unit-tested. |
+| `app/src/main/java/.../data/Answer.kt` | The answer value type. |
 | `app/src/main/java/.../platform/LaunchActivity.kt` | Thin `SpatialLaunchActivity` subclass. The launcher entry point; holds the container meta-data. |
 | `app/src/main/java/.../platform/SpatialApplication.kt` | Application class wiring `mainApp` into the Spatial runtime. |
-| `app/src/main/assets/box.usdz` | Placeholder 3D model. Replace with real content; keep assets uncompressed. |
+| `app/src/main/assets/book.usdz` | The book model (~4 MB, bounding box 0.03 × 0.21 × 0.29 m — already real-world scale, do not rescale). Carries the open/close animation the app plays. |
+| `app/src/main/assets/answers.txt` | The answer corpus: 1094 entries, longest is 19 characters. `AnswerSource` logs `loaded 1094 answers` — a count of 3 means the asset did not ship. |
+| `app/src/main/assets/box.usdz` | Leftover scaffold placeholder, no longer referenced. Safe to delete. |
+| `app/src/test/java/...` | Unit tests for `AnswerParser`, `AnswerRepository`, `BookState`. Run with `./gradlew testDebugUnitTest`. |
 | `gradle/libs.versions.toml` | Version catalog, including `spatialBom`. |
+
+## What the app does
+
+A closed book sits in the volume with a prompt panel floating just above it. Touching the
+book opens it and a random answer from the corpus replaces the prompt. Touching again shuts
+the book, swaps the answer **while it is shut**, then reopens it.
 
 ## Spatial capabilities already in use
 
 - Volumetric `WindowContainer` via manifest meta-data
 - SpatialUI + `PicoTheme`
-- 3D model loading from `assets/` (USDZ)
+- 3D model loading from `assets/` (USDZ), driven by the model's own built-in animation
+- `CollisionComponent` + `InteractableComponent` and `detectSpatialTapGesture` for touch
 - `spatial-sense` and `spatial-tracking` are on the classpath but not yet used
+
+## Interaction / placement gotchas learned the hard way
+
+- **`EulerAngles(pitch, yaw, roll)` is extrinsic ZXY** (`M = M_yaw_Y · M_pitch_X · M_roll_Z`).
+  The book model's cover normal is local `+X`, which is the pitch axis — so at `roll = 0`,
+  changing `pitch` cannot change which way the cover faces at all. `roll` is what lays the
+  book down. Do not iterate on `pitch` to aim the cover.
+- **The model's open animation itself adds roll ≈ +90°.** At `roll = 0` the closed book
+  stands upright and the open book is dead flat. So closed-looks-good and open-looks-good
+  pull `roll` in opposite directions; the current value is a deliberate compromise, see the
+  `BOOK_ORIENTATION` KDoc.
+- **`ShapeResource.createBox` centres on the entity origin, and this model's origin is at the
+  book's base**, not its centre (`getVisualBounds().center.y ≈ 0.101`, half the height). The
+  `offsetByTranslation(bounds.center)` in `BookScene.kt` is therefore load-bearing. A wrong
+  offset fails **silently**: the resource is still valid, the hitbox is just in the wrong
+  place. Nothing throws and nothing logs.
+- **The emulator cannot exercise spatial input.** `adb shell input tap` injects 2D screen
+  coordinates and does not reach a volumetric window's hit-testing — verified: tapping the
+  book's exact on-screen centroid produces no `HomeVolume` log line at all. Ray and poke
+  interaction must be validated by hand on a device or in the emulator UI.
+- `pointerInput`'s key must be `scene`, not `Unit` — the book loads asynchronously, and with
+  `Unit` the `TargetEntity` closure stays pinned to the first-composition `null`, which
+  silently makes *everywhere* hittable.
 
 ## UI rule for this project (hard constraint)
 
@@ -54,7 +95,15 @@ All 2D UI is built with **SpatialUI** (`com.pico.spatial.ui.*`) wrapped in `Pico
 no `MaterialTheme`, no `Scaffold`. Colors and type go through `PicoTheme.colorScheme.*`
 and `PicoTheme.typography.*`; do not hardcode `Color(0x...)` or `TextStyle(fontSize = ...)`.
 
-Verified clean at scaffold time — keep it that way.
+Verified clean at scaffold time and re-verified after the book interaction landed — keep it
+that way. `AnswerPanel.kt` is the reference for how to do it: `PicoTheme.colorScheme.*` /
+`PicoTheme.typography.*` roles, `com.pico.spatial.ui.design.Text`, and
+`com.pico.spatial.ui.foundation.material.backgroundMaterial`.
+
+One caveat on checking SpatialUI symbols: the Agent Vault api-reference under
+`$PICO_HOME/6.0/agent-vault/spatial/api-reference/` is **package-scoped, not exhaustive**.
+`backgroundMaterial` is real but appears in none of those files. Absence there is not proof a
+symbol does not exist; a successful `compileDebugKotlin` is the stronger signal.
 
 ## Build, install, run
 
@@ -104,12 +153,38 @@ on first 6.0 start. The older `PICO_0.13` AVD is still installed as a fallback b
   `AGENTS.md` routing. Both are codex-specific and irrelevant when working in Claude Code,
   which routes through this `CLAUDE.md`.
 
+## Verify before claiming anything works
+
+```bash
+./gradlew assembleDebug && ./gradlew testDebugUnitTest
+pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
+pico-cli shell "logcat -c" --device emulator-5554          # ALWAYS clear first
+pico-cli app launch com.illusion.bookofanswers --activity .platform.LaunchActivity --device emulator-5554
+pico-cli shell "logcat -d -v brief -s AnswerSource:V BookScene:V BookAnimator:V HomeVolume:V" --device emulator-5554
+```
+
+Healthy startup is exactly two lines: `AnswerSource: loaded 1094 answers` and
+`BookScene: book loaded, bounds=..., center=..., animated=true`. `animated=false` means the
+animation fell back to still mode. Any `BookAnimator` line at all is a problem — the tag only
+ever logs segment timeouts, so **silence is the pass condition**.
+
+Clear logcat before *every* launch. A stale line from the previous run reads as current and
+has already produced one wrong conclusion in this project.
+
+Note there are two devices attached on this machine (a physical PICO and the emulator), so
+`--device emulator-5554` is not optional.
+
 ## Natural next steps
 
-1. Replace `box.usdz` with the real Book of Answers model and drive it from ECS.
-2. Build the answer-reveal interaction (tap/grab on the volume) — needs both input and
-   collision evidence on device, not just code review.
-3. Add the answer text/data layer and render it with SpatialUI inside the volume.
+1. **On-device acceptance (Task 10).** Real finger `InteractionKind.Poke`, ray-tap hit
+   accuracy against the collider, animation speed, and how the placement reads at a
+   user-chosen window height — none of these can be settled in the emulator.
+2. Revisit `BOOK_ORIENTATION`'s closed-vs-open roll compromise once there is a real device
+   viewpoint to judge it from.
+3. Delete the unused `box.usdz` placeholder.
+4. Consider letting `AnswerPanel` wrap/grow instead of its fixed `Modifier.size(...)`. The
+   longest corpus answer (19 chars) currently fits on one line with room to spare, so this is
+   headroom for a future corpus, not a present bug.
 
 Follow-up feature work should route through `spatial-app-dev-workflow`; 3D content
 authoring through `spatial-editor`.
