@@ -9,6 +9,7 @@ import com.pico.spatial.core.ecs.resource.PhysicsMaterialResource
 import com.pico.spatial.core.ecs.resource.ShapeResource
 import com.pico.spatial.core.math.EulerAngles
 import com.pico.spatial.core.math.Vector3
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import java.io.Closeable
 
@@ -70,6 +71,12 @@ private val BOOK_ORIENTATION = EulerAngles(-60f, 180f, 0f)
 suspend fun loadBookScene(scope: CoroutineScope): BookScene? {
     val entity = try {
         Entity.loadSuspend(uriString = BOOK_ASSET)
+    } catch (c: CancellationException) {
+        // 必须先于 Throwable 捕获并原样抛出：loadSuspend 是挂起调用，Task 9 的
+        // DisposableEffect 可能在加载途中销毁 volume，取消就是从这里冒出来的。
+        // 把它并进下面的错误分支，等于既往 logcat 里刷一条假的 E，又吞掉了协程
+        // 机制赖以收尾的取消信号。
+        throw c
     } catch (t: Throwable) {
         Log.e(TAG, "failed to load $BOOK_ASSET", t)
         return null
@@ -82,15 +89,30 @@ suspend fun loadBookScene(scope: CoroutineScope): BookScene? {
 
     // 碰撞体用包围盒而非 mesh：文档明确 mesh collider 开销高得多，
     // 而书本外形本就接近盒子，精度差异用户不可感知。
-    // 两点已知的近似（都留给设备验证，不在这里预先修）：
-    //   1. 尺寸取自**合着**的姿态，摊开后书会变大；若设备上摊开的书边缘戳不到，
-    //      改成按摊开帧重算尺寸，而不是换成 mesh collider。
-    //   2. 盒子以实体原点为心，不是以 bounds.center 为心；日志里带上 center 便于核对
-    //      偏移是否大到需要处理。
+    //
+    // 尺寸取自**合着**的姿态，摊开后书会变大；若设备上摊开的书边缘戳不到，
+    // 改成按摊开帧重算尺寸，而不是换成 mesh collider。
     val bounds = entity.getVisualBounds(entity, recursive = true, enabledOnly = false)
+
+    // createBox 出来的盒子以实体原点为心，而 bounds 是实体局部坐标系下的（relativeTo =
+    // entity），碰撞形状也在同一坐标系里，所以非零的 bounds.center 就是碰撞体相对可见
+    // 网格的偏移量。用 offsetByTranslation 把它补回去 —— center 为零时该调用是恒等的，
+    // 所以这不是过度设计。
+    val boxShape = ShapeResource.createBox(bounds.size)
+    val bookShape = try {
+        boxShape.offsetByTranslation(bounds.center)
+    } finally {
+        // offsetByTranslation 返回的是**新**资源，原始 box 从此没有任何 entity 使用，
+        // 不 close 就是文档里那条「局部作用域创建但无人使用」的泄漏。放 finally 里，
+        // 抛异常的路径也照样释放。
+        //
+        // 这不会让 bookShape 失效：文档明确 close() 只是撤销持久化、在无人引用时立即
+        // 释放，且「不影响已经在使用该资源的用户」。
+        boxShape.close()
+    }
     entity.components.set(
         CollisionComponent(
-            collisionShape = listOf(ShapeResource.createBox(bounds.size)),
+            collisionShape = listOf(bookShape),
             physicsMaterial = PhysicsMaterialResource(),
         )
     )
@@ -115,6 +137,8 @@ suspend fun loadBookScene(scope: CoroutineScope): BookScene? {
         animator.showClosed()
     }
 
+    // center 留在日志里：碰撞体偏移已经补过了，但这条能告诉设备上的人当时的偏移到底
+    // 是零还是真有值。
     Log.i(
         TAG,
         "book loaded, bounds=${bounds.size}, center=${bounds.center}, animated=${animator != null}",
