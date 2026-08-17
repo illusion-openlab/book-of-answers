@@ -27,7 +27,7 @@
             <!-- The unique name/id of a WindowContainer -->
             <meta-data
                 android:name="pico.spatial.windowcontainer.id"
-                android:value="YourVolumetricWindowContainer" />
+                android:value="BookOfAnswersVolume" />
 
             <!-- Form/style of the WindowContainer
                 "0": Form.Automatic, a system default setting, set to Form.Planar currently (default)

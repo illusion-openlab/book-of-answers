@@ -24,19 +24,35 @@ class BookScene(
     val animator: BookAnimator?,
 ) : Closeable {
 
+    private var closed = false
+
     /**
-     * 释放动画资源。
+     * 释放动画资源**并销毁实体**。
      *
      * [AnimationPlaybackController][com.pico.spatial.core.ecs.animation.AnimationPlaybackController]
      * 归 [BookAnimator] 所有，只由它 close —— 本类从不直接持有 controller，所以不存在重复
-     * close。[BookAnimator.close] 自带 `closed` 闸，因此本方法多调一次也安全
-     * （`stopAllAnimations` 本身幂等）。
+     * close。（`stopAllAnimations` 大概推测是幂等的，但 api-reference 只写了「停止该实体上所有
+     * 正在播放的动画」，没有对重复调用表态，所以别把幂等当成有据可查的事实。）
      *
-     * 实体的生命周期归把它加进 content 的那一层（Task 9）管，这里不销毁。
+     * **顺序不能颠倒：先 close animator，再 destroy 实体。** animator 持有的 controller 来自
+     * `meshEntity.playAnimation(...)`，而 meshEntity 是本实体的子节点 —— `destroy(recursively =
+     * true)` 会把它一起销毁，之后再 `controller.close()` 就是对已销毁的宿主动手。
+     *
+     * 实体的销毁必须在这里做。曾经的注释把它推给「把实体加进 content 的那一层」，但没有任何
+     * 一层真的调过 `Entity.destroy()`；而迟到加载路径上实体根本没进过 content，连容器拆除都
+     * 兜不到它 —— 那就是一整个 ~4 MB 模型的泄漏。
+     *
+     * `closed` 闸保证重复 close 安全：`destroy` 对已销毁实体只会返回 false，但也没必要去赌，
+     * 而且这条闸让本方法维持了原先「多调一次也安全」的契约。
      */
     override fun close() {
+        if (closed) return
+        closed = true
         animator?.close()
         entity.stopAllAnimations()
+        // destroy(recursively = true) 是默认值，写出来是为了让「连子节点一起收」这件事显式。
+        val destroyed = entity.destroy(recursively = true)
+        if (!destroyed) Log.w(TAG, "Entity.destroy() returned false for the book entity")
     }
 }
 

@@ -102,5 +102,15 @@ class BookStateTest {
         h.state.onTap()
         h.state.onTap()
         assertEquals(1, h.animator.closeThenOpenCalls)
+        // 下面这两条各挡一种把 Reshuffling 归错组的写法，且必须两条都在：
+        //
+        // - 归到 Revealed 一侧 → closeThenOpenCalls 会变成 3，上面那条就够。
+        // - 归到 **Closed** 一侧 → 第一次多余的触碰就会走开书分支，openCalls 1→2、phase 变成
+        //   Opening（之后两次触碰被 Opening 那道闸挡住，所以是 2 而不是 3），而
+        //   closeThenOpenCalls 仍是 1、draws 也没变 —— 本分支上原有的每一条断言都照样通过。
+        //   实测过：把 Reshuffling 并进 Closed 分支后，20 个测试里只有本条 openCalls 断言失败
+        //   （expected:<1> but was:<2>），所以它不是冗余。
+        assertEquals("重抽途中不该再走开书分支", 1, h.animator.openCalls)
+        assertEquals(BookPhase.Reshuffling, h.state.phase)
     }
 }

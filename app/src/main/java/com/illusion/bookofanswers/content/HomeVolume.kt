@@ -45,8 +45,10 @@ private class DisposalFlag(var disposed: Boolean = false)
  *   `catch (Throwable)`，放到 `LaunchedEffect` / `initial` 里会把 `CancellationException`
  *   一起吞掉。它被刻意写成非 suspend 就是为此。
  * - `pointerInput` 的 key **必须是 `scene` 而非 `Unit`。** 书本异步加载，用 `Unit` 的话
- *   `TargetEntity` 闭包会永久停在首次组合时的 `null`，命中范围静默失效 —— 不报错，只是
- *   点哪儿都能触发。
+ *   `TargetEntity` 闭包会永久停在首次组合时的 `null`。**「target 为 null ⇒ 点哪儿都能触发」
+ *   是设备上观察到的行为，不是文档结论** —— `detectSpatialTapGesture` 在 api-reference 里
+ *   查不到，它对 null target 的语义没有可引用的出处。不过修法与机制无关：keyed on `scene`
+ *   之后闭包总能读到最新的实体，无论 null 的语义是「全命中」还是「不命中」都正确。
  * - 传给 [loadBookScene] 的 scope **必须主线程受限**：[BookAnimator] 不切 dispatcher，
  *   直接在该 scope 上投递回调，而 [BookState.phase] 是无同步的普通 `var` 且做
  *   check-then-act。`rememberCoroutineScope()` 满足这一条，不要包装它或切 dispatcher。
@@ -82,13 +84,33 @@ fun HomeVolume() {
             }
         },
         initial = { content, attachments ->
+            // 面板先挂，**再**去 load 那个 ~4 MB 的模型。顺序反过来的话，volume 在整个加载
+            // 期间是全空的，邀请语「心中默念你的问题 / 然后触碰这本书」反而最后才到 —— 那
+            // 正是 app 的第一印象。面板落位不变，仍是 PANEL_POSITION。
+            //
+            // 那段空窗有多长：模拟器上实测 `AnswerSource: loaded …` 到 `BookScene: book loaded`
+            // 相隔 0.98 / 1.94 / 1.95 s（三次热启动），并发录屏拖慢时到过 8.12 s。
+            //
+            // **这条改动在本机模拟器上看不出效果，别据此判断它没用。** 该模拟器把 volumetric
+            // 窗口合成出来要 ~4 s，比模型加载完还晚（t+2.2–4.0 s 的截图里整个窗口都还没出现），
+            // 所以中间态在这里根本不可见。真机上窗口呈现快得多，那 1–2 s 才是用户会看到的。
+            //
+            // 挪到这里同时消掉了一个小隐患：此处位于 loadBookScene 之前，本 lambda 还没有
+            // 任何挂起点，所以挂面板这件事不可能落到 onDispose 之后。
+            attachments.entity(id = ANSWER_PANEL_ID)?.apply {
+                components[TransformComponent::class.java]?.setPosition(PANEL_POSITION)
+                content.addEntity(this)
+            }
+
             val loaded = loadBookScene(scope)
 
             // 竞态收尾。`loadSuspend` 恢复之后本 lambda 再无挂起点，于是存在这样一个窗口：
             // onDispose 已经整段跑完（它读到的 scene 还是 null，什么都没 close），而这里
             // 照旧把 scene 赋回去 —— animator 手里的 AnimationPlaybackController 就永远
             // 没人 close 了。只在销毁与加载正好交叠时发生，一次性、不累积，但确实是泄漏。
-            // 所以在 addEntity 之前再查一次销毁标记，这条迟到路径自己把资源收掉。
+            // 所以在 addEntity 之前再查一次销毁标记，这条迟到路径自己 close 掉整个 scene ——
+            // 现在 BookScene.close() 里带上了 Entity.destroy()，所以收掉的既有 controller
+            // 也有实体本身。这条路径上实体从没进过 content，容器拆除兜不到它，只能这样收。
             if (disposal.disposed) {
                 loaded?.close()
                 Log.i(TAG, "book scene finished loading after dispose, closed it")
@@ -119,11 +141,6 @@ fun HomeVolume() {
                         panelContent = PanelContent.AnswerText(repository.next().text)
                     },
                 )
-            }
-
-            attachments.entity(id = ANSWER_PANEL_ID)?.apply {
-                components[TransformComponent::class.java]?.setPosition(PANEL_POSITION)
-                content.addEntity(this)
             }
         },
         attachments = {
