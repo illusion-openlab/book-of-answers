@@ -51,8 +51,25 @@ class AnswerRepositoryTest {
     @Test
     fun `same seed yields the same sequence`() {
         val source = answers(60)
-        val a = (1..30).map { AnswerRepository(source, Random(99)).next() }
-        val b = (1..30).map { AnswerRepository(source, Random(99)).next() }
+        val first = AnswerRepository(source, Random(99))
+        val second = AnswerRepository(source, Random(99))
+        val a = (1..30).map { first.next() }
+        val b = (1..30).map { second.next() }
         assertEquals(a, b)
+    }
+
+    @Test
+    fun `window is capped at half the corpus so small lists keep more than one candidate`() {
+        // Guards the load-bearing cap. Under min(capacity, size - 1) a 3-answer
+        // corpus degenerates into a fixed A-B-C cycle, where a value can never
+        // recur two draws later. Under min(capacity, size / 2) it can, and does.
+        val repo = AnswerRepository(answers(3), Random(5), recentCapacity = 32)
+        val drawn = (1..200).map { repo.next() }
+        val recursAfterTwo = drawn.indices.drop(2).any { drawn[it] == drawn[it - 2] }
+        assertTrue(
+            "a 3-answer corpus should allow a value to recur two draws later; " +
+                "if it never does, the recent window is capping at size - 1 instead of size / 2",
+            recursAfterTwo,
+        )
     }
 }
