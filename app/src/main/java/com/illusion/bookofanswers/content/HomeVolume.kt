@@ -26,7 +26,7 @@ private const val ANSWER_PANEL_ID = "answer_panel"
  * 答案面板在 volume 局部坐标系里的落位（不是相对书本实体的偏移 —— 面板实体是 volume 的
  * 直接子节点，`setPosition` 写的就是 volume 局部坐标）。设备定标值，见 Task 9 Step 6。
  */
-private val PANEL_OFFSET = Vector3(0f, 0.28f, 0.05f)
+private val PANEL_OFFSET = Vector3(0f, 0.13f, 0.16f)
 
 /**
  * 整个 app 的唯一一屏：一本合着的书 + 悬在它上方的答案面板。
@@ -58,27 +58,6 @@ fun HomeVolume() {
             scene?.close()
             scene = null
         }
-    }
-
-    // ⚠️ TEMPORARY TASK 9 VERIFICATION PROBE — REMOVE BEFORE COMMIT.
-    // The emulator gives an agent no way to inject spatial ray input, so this
-    // broadcast hook stands in for the tap to exercise the state machine,
-    // animation sequencing and answer swap. Trigger with:
-    //   adb shell am broadcast -a com.illusion.bookofanswers.PROBE_TAP
-    DisposableEffect(bookState) {
-        val receiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(c: android.content.Context?, i: android.content.Intent?) {
-                Log.i(TAG, "PROBE_TAP received, phase before=${bookState?.phase}")
-                bookState?.onTap()
-                Log.i(TAG, "PROBE_TAP handled, phase after=${bookState?.phase}")
-            }
-        }
-        context.registerReceiver(
-            receiver,
-            android.content.IntentFilter("com.illusion.bookofanswers.PROBE_TAP"),
-            android.content.Context.RECEIVER_EXPORTED,
-        )
-        onDispose { context.unregisterReceiver(receiver) }
     }
 
     SpatialView(

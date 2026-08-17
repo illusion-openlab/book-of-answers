@@ -44,14 +44,33 @@ private const val TAG = "BookScene"
 private const val BOOK_ASSET = "asset://book.usdz"
 
 /**
- * 书本在 volume 内的落位与朝向。
+ * 书本在 volume 内的落位与朝向，模拟器截图定标（Task 9）。
  *
- * **这两个数目前是待定标的占位值，不是实测值。** 已验证的事实只有一条：模型默认朝向是
- * 书脊侧对观察者，所以必须转过来。具体角度和高度靠 Task 9 Step 6 对着设备截图调 ——
- * 不要试图解析地推导它们，看着不对就改这里。
+ * 朝向的推导别靠直觉，[EulerAngles] 是**外旋 ZXY**：`M = M_yaw_Y · M_pitch_X · M_roll_Z`，
+ * 先绕世界 Z 转 roll，再绕世界 X 转 pitch，最后绕世界 Y 转 yaw。模型默认封面法向就是
+ * 局部 +X（包围盒 0.03 × 0.21 × 0.29，0.03 那一维即书厚），于是：
+ *
+ * - **pitch 在 roll=0 时对「封面朝哪」毫无作用** —— pitch 绕的就是 X 轴本身，转它只是让书
+ *   在自己的平面里打转。想让书躺下必须动 roll，别再往 pitch 上试。
+ * - roll = r 把封面法向从水平的 +X 抬到与水平面成 r 度：r=0 是竖着立（封面正对人，像书架
+ *   上正面朝外摆），r=90 是完全平放（封面朝天）。
+ * - yaw 把那个法向的水平分量转向 +Z（观察者方向），并同时决定页口面（局部 +Z，那条奶白色
+ *   书口）落在画面哪一侧。yaw=-90 时它正好侧对相机、投影面积为零，书就退化成一块深色板；
+ *   -65 让它露出来落在左边，厚度和页块都看得见。
+ *
+ * roll=20 是权衡出来的，不是最优解：**模型自带的开书动画本身就相当于再叠一个 roll ≈ +90**
+ * （roll=0 时合着是立着的、摊开是完全平放的）。所以合着好看要 roll 大，摊开好看要 roll 小：
+ *
+ * - roll=0：合着像一块立牌；摊开正好水平，但相机与 volume 几乎同高，平面几乎侧对视线。
+ * - roll=20：合着明确是本书（`artifacts/t9-f-mid-closed.png`）；摊开是 110°，略微翻过头。
+ * - roll=35：合着更立体，但摊开成了 125°，近侧封面倒下来把书页挡住（`t9-d-open-wide.png`）。
+ *
+ * 这里按 Task 9 的验收口径优先保「合着时像一本正对用户的书」。摊开姿态还要在真机上复看：
+ * 设备端窗口高度由用户摆放决定，俯视角比模拟器这个固定机位大，观感会不同（Task 10）。
+ * 改这里之前先看 `artifacts/t9-*-pair.png` 那几张左右对照图。
  */
-private val BOOK_POSITION = Vector3(0f, -0.1f, 0f)
-private val BOOK_ORIENTATION = EulerAngles(0f, -55f, 0f)
+private val BOOK_POSITION = Vector3(0.015f, -0.215f, 0.09f)
+private val BOOK_ORIENTATION = EulerAngles(0f, -65f, 20f)
 
 /**
  * 加载书本模型、落位、挂碰撞体与可交互组件，并（若模型带动画）建好 [BookAnimator]。
