@@ -26,7 +26,15 @@ private const val ANSWER_PANEL_ID = "answer_panel"
  * 答案面板在 volume 局部坐标系里的落位（不是相对书本实体的偏移 —— 面板实体是 volume 的
  * 直接子节点，`setPosition` 写的就是 volume 局部坐标）。设备定标值，见 Task 9 Step 6。
  */
-private val PANEL_OFFSET = Vector3(0f, 0.13f, 0.16f)
+private val PANEL_POSITION = Vector3(0f, 0.13f, 0.16f)
+
+/**
+ * 「组合已销毁」的一格可变盒子。
+ *
+ * 用普通类而不是 `MutableState` / 原子量是刻意的：读写全在主线程，既不需要快照订阅，也不该
+ * 让读者以为这里有跨线程可见性问题。用途见 [HomeVolume] 里 `initial` 的迟到加载分支。
+ */
+private class DisposalFlag(var disposed: Boolean = false)
 
 /**
  * 整个 app 的唯一一屏：一本合着的书 + 悬在它上方的答案面板。
@@ -53,8 +61,11 @@ fun HomeVolume() {
     var scene by remember { mutableStateOf<BookScene?>(null) }
     var bookState by remember { mutableStateOf<BookState?>(null) }
 
+    val disposal = remember { DisposalFlag() }
+
     DisposableEffect(Unit) {
         onDispose {
+            disposal.disposed = true
             scene?.close()
             scene = null
         }
@@ -72,6 +83,18 @@ fun HomeVolume() {
         },
         initial = { content, attachments ->
             val loaded = loadBookScene(scope)
+
+            // 竞态收尾。`loadSuspend` 恢复之后本 lambda 再无挂起点，于是存在这样一个窗口：
+            // onDispose 已经整段跑完（它读到的 scene 还是 null，什么都没 close），而这里
+            // 照旧把 scene 赋回去 —— animator 手里的 AnimationPlaybackController 就永远
+            // 没人 close 了。只在销毁与加载正好交叠时发生，一次性、不累积，但确实是泄漏。
+            // 所以在 addEntity 之前再查一次销毁标记，这条迟到路径自己把资源收掉。
+            if (disposal.disposed) {
+                loaded?.close()
+                Log.i(TAG, "book scene finished loading after dispose, closed it")
+                return@SpatialView
+            }
+
             if (loaded == null) {
                 panelContent = PanelContent.AnswerText("书没能翻开")
                 Log.e(TAG, "book scene unavailable")
@@ -99,7 +122,7 @@ fun HomeVolume() {
             }
 
             attachments.entity(id = ANSWER_PANEL_ID)?.apply {
-                components[TransformComponent::class.java]?.setPosition(PANEL_OFFSET)
+                components[TransformComponent::class.java]?.setPosition(PANEL_POSITION)
                 content.addEntity(this)
             }
         },
