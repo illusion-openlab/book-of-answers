@@ -13,28 +13,15 @@ import java.io.Closeable
 /**
  * 对模型内置的 `Demo` 骨骼动画做区间定位播放。
  *
- * 该动画的实际内容是「开书 → 驻留 → 合书」，不含翻页。时间轴分段（fps = 120，实测）：
- *
- * | 语义     | 帧        | 秒（相对片段起点）  |
- * |----------|-----------|---------------------|
- * | 合着驻留 | 5 – 100   | 0.000 – 0.792       |
- * | 开书     | 100 → 200 | 0.792 → 1.625       |
- * | 摊开驻留 | 200 – 300 | 1.625 – 2.458       |
- * | 合书     | 300 → 400 | 2.458 → 3.292       |
- *
- * **秒数是相对片段起点的，不是 `帧 / fps`。** controller 的时间轴零点落在片段的第一个
- * 关键帧（frame 5）上，而不是 frame 0，所以换算要减去 [CLIP_START_FRAME]，见 [atFrame]。
- * 佐证：`(400 - 5) / 120 = 3.29167`，与实测总时长 3.29166s 吻合到五位小数；若按 `帧 / fps`
- * 直接换算，每个端点都会晚 5 帧（42ms），而 `CLOSE_END` 会算成 3.333s —— 超出片段实际
- * 时长，`getTime()` 永远到不了，合书区间每次都会走满超时闸。
- *
+  * 该动画的实际内容是「开书 → 驻留 → 合书」，不含翻页。分段常量见伴生对象，
+ * 都由离线解算的关节曲线定出，不是猜的。
  * `scope` 必须是主线程 scope：[AnimationPlaybackController] 标注了 `@MainThread`，
  * 且 `BookState.phase` 是无同步的普通 `var`。本类不做任何 dispatcher 切换，
  * 因此所有回调都在 `scope` 的线程（即主线程）上投递。
  *
  * ## 回调只投递一次，且不会在被取消后补投
  *
- * `BookState` 没有幂等闸：一次 `open` / `closeThenOpen` 的 `onSwap` / `onDone`
+ * `BookState` 没有幂等闸：一次 `open` / `closeBook` 的 `onDone`
  * 必须恰好触发一次，被打断的区间绝不能事后再触发。为此每次启动序列都自增
  * [generation]，回调投递前用 [isLive] 校验自己那一代仍然是当前代。
  *
@@ -54,6 +41,17 @@ import java.io.Closeable
 class BookAnimator(
     private val controller: AnimationPlaybackController,
     private val scope: CoroutineScope,
+    /**
+     * 开合进度回调，0 = 完全合上，1 = 完全摊开。每个轮询 tick 调一次，并在区间收尾时
+     * 用端点值再调一次（避免停在 0.98 这种中间值）。
+     *
+     * 存在的原因：模型动画自己带了约 +90° 的 roll，所以单一静态姿态无法同时让「合上」
+     * 和「摊开」都平放 —— 合上要 roll=-90，摊开要 roll=0。调用方据此把实体姿态跟着
+     * 播放进度插值。本类不碰实体，只报进度，姿态换算归 [loadBookScene] 所有。
+     *
+     * 与回调一起的线程契约同 [scope]：主线程，不切 dispatcher。
+     */
+    private val onOpenness: (Float) -> Unit = {},
 ) : Closeable {
 
     /** 当前序列的协程。整个类同一时刻只有一个 job。 */
@@ -67,7 +65,7 @@ class BookAnimator(
     /**
      * 立即定位到合着的姿态，不播放。
      *
-     * **会丢弃在跑序列的未投递回调。** 若在 [open] / [closeThenOpen] 播放途中调用，
+     * **会丢弃在跑序列的未投递回调。** 若在 [open] / [closeBook] 播放途中调用，
      * 该序列的 `onDone` 永远不会触发，`BookState` 会永久停在 `Opening` / `Reshuffling`,
      * 表现为「书戳不动了」。这是故意的 —— 另一种选择是投递一个过期回调，而那会提前
      * 解开状态机的 tap 闸门，是更糟的坏法。当前唯一的调用点是 Task 7 构造后的一次性
@@ -79,32 +77,28 @@ class BookAnimator(
         cancelRunning()
         controller.setTime(CLOSED_POSE)
         controller.pause()
+        onOpenness(0f)
     }
 
     /** 翻开 → [onDone]。 */
     fun open(onDone: () -> Unit) {
         if (closed) return
         launchSequence { gen ->
-            playSegment(OPEN_START, OPEN_END)
+            playSegment(OPEN_START, OPEN_END, fromOpenness = 0f, toOpenness = 1f)
             if (isLive(gen)) onDone()
         }
     }
 
-    /** 合上 → 在完全合上的瞬间执行 [onSwap] → 重新翻开 → [onDone]。 */
-    fun closeThenOpen(onSwap: () -> Unit, onDone: () -> Unit) {
+    /**
+     * 合上 → [onDone]。
+     *
+     * 刻意不叫 `close`：本类实现了 [Closeable]，`close()` 是释放 controller 的。
+     * 两者同名会让「合上这本书」和「销毁这个动画器」在调用点上长得一模一样。
+     */
+    fun closeBook(onDone: () -> Unit) {
         if (closed) return
-        // 两段放在同一个协程里顺序执行。若像「合书区间的完成回调里再起一个新区间」
-        // 那样写，新区间的第一件事 `job?.cancel()` 取消的正是它自己所在的那个协程，
-        // 语义要靠「新 job 挂在 scope 而非父协程下」这种细节才勉强成立。这里只留
-        // 一个 job，不存在自取消。
         launchSequence { gen ->
-            playSegment(CLOSE_START, CLOSE_END)
-            if (!isLive(gen)) return@launchSequence
-            onSwap()
-            // onSwap 可能重入 close() / showClosed()。不复查就会对已释放的 controller
-            // 调 setTime / resume。
-            if (!isLive(gen)) return@launchSequence
-            playSegment(OPEN_START, OPEN_END)
+            playSegment(CLOSE_START, CLOSE_END, fromOpenness = 1f, toOpenness = 0f)
             if (isLive(gen)) onDone()
         }
     }
@@ -138,7 +132,12 @@ class BookAnimator(
      * 取消方（[showClosed] / [cancelRunning] 后新序列 / [close]）都会立刻自行
      * 重置或释放 controller，此处再补一次 `pause()` 有可能落在 `close()` 之后。
      */
-    private suspend fun playSegment(from: Float, to: Float) {
+    private suspend fun playSegment(
+        from: Float,
+        to: Float,
+        fromOpenness: Float,
+        toOpenness: Float,
+    ) {
         controller.setTime(from)
         controller.resume()
 
@@ -154,33 +153,49 @@ class BookAnimator(
         // 避免状态机永久卡在动画中而彻底失去响应。
         val budgetMs = (((to - from) * 2f) * 1000f).toLong().coerceAtLeast(MIN_BUDGET_MS)
 
+        val span = (target - from).takeIf { it > 0f }
         val reached = withTimeoutOrNull(budgetMs) {
-            while (controller.getTime() < target) delay(POLL_INTERVAL_MS)
+            while (controller.getTime() < target) {
+                // 进度按「已播时长 / 区间时长」算，而不是按墙钟 —— 播放速率若被改动
+                // 或运行时掉帧，姿态仍然跟得住实际画面。
+                val p = span?.let { ((controller.getTime() - from) / it).coerceIn(0f, 1f) } ?: 1f
+                onOpenness(fromOpenness + (toOpenness - fromOpenness) * p)
+                delay(POLL_INTERVAL_MS)
+            }
             true
         }
         if (reached == null) {
             Log.w(TAG, "segment $from -> $to timed out at ${controller.getTime()}, forcing completion")
         }
         controller.pause()
+        // 收口到端点。轮询最后一次采样通常停在 0.97~0.99，不收口书会差一点没摆平。
+        onOpenness(toOpenness)
     }
 
     private companion object {
         const val TAG = "BookAnimator"
         const val FPS = 120f
 
-        /** 片段的第一个关键帧。controller 的时间轴零点在这里，不在 frame 0。 */
-        const val CLIP_START_FRAME = 5f
+        /**
+         * 片段的首帧。controller 的时间轴以此为零点，不是 frame 0 —— 本模型时间轴是
+         * 65 → 600，`getDuration()` 应约等于 (600-65)/120 = 4.458s。
+         */
+        const val CLIP_START_FRAME = 65f
 
-        val CLOSED_POSE = atFrame(5f)      // 0.00000s
-        val OPEN_START = atFrame(100f)     // 0.79167s
-        val OPEN_END = atFrame(200f)       // 1.62500s
-        val CLOSE_START = atFrame(300f)    // 2.45833s
-        val CLOSE_END = atFrame(400f)      // 3.29167s ≈ 实测总时长
+        private fun atFrame(frame: Float) = (frame - CLIP_START_FRAME) / FPS
+
+        // 离线用 UsdSkel 解算关节曲线量出的分段（模型 Kiano88 Book of Mythical Newar）：
+        //   frame  65        两个关节都在 0°，合上
+        //   frame  65 → 161  n13 与 n12 先后转到 90°，开书
+        //   frame 161 → 490  都停在 90°，摊开驻留
+        //   frame 490 → 600  对称回到 0°，合书
+        val CLOSED_POSE = atFrame(65f)      // 0.000s
+        val OPEN_START = atFrame(65f)       // 0.000s
+        val OPEN_END = atFrame(170f)        // 0.875s，比 161 多留一点余量
+        val CLOSE_START = atFrame(490f)     // 3.542s
+        val CLOSE_END = atFrame(600f)       // 4.458s
 
         const val POLL_INTERVAL_MS = 16L
         const val MIN_BUDGET_MS = 500L
-
-        /** 帧号 → controller 时间轴上的秒。 */
-        private fun atFrame(frame: Float): Float = (frame - CLIP_START_FRAME) / FPS
     }
 }

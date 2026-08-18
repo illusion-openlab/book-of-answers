@@ -1,6 +1,8 @@
 package com.illusion.bookofanswers.content
 
 import android.util.Log
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -16,6 +18,8 @@ import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.math.Vector3
 import com.pico.spatial.ui.foundation.content.SpatialView
 import com.pico.spatial.ui.foundation.gesture.TargetEntity
+import com.pico.spatial.ui.foundation.gesture.data.InteractionKind
+import com.pico.spatial.ui.foundation.gesture.detectSpatialPointerEvent
 import com.pico.spatial.ui.foundation.gesture.detectSpatialTapGesture
 
 private const val TAG = "HomeVolume"
@@ -26,7 +30,9 @@ private const val ANSWER_PANEL_ID = "answer_panel"
  * 答案面板在 volume 局部坐标系里的落位（不是相对书本实体的偏移 —— 面板实体是 volume 的
  * 直接子节点，`setPosition` 写的就是 volume 局部坐标）。设备定标值，见 Task 9 Step 6。
  */
-private val PANEL_POSITION = Vector3(0f, 0.13f, 0.16f)
+// 书的视觉中心在 BookScene.BOOK_CENTER = (0, -0.2, 0.3)。文字浮在它正上方，
+// 所以 x/z 与书对齐，只抬高 y。
+private val PANEL_POSITION = Vector3(0f, 0.06f, 0.3f)
 
 /**
  * 「组合已销毁」的一格可变盒子。
@@ -60,6 +66,14 @@ fun HomeVolume() {
     val repository = remember { AnswerSource.load(context) }
 
     var panelContent by remember { mutableStateOf<PanelContent>(PanelContent.Prompt) }
+    // 文字在书animation运动期间隐去，落定后再浮现。淡出比淡入短——消失可以干脆，
+    // 出现要给人「浮上来」的感觉。
+    var panelVisible by remember { mutableStateOf(true) }
+    val panelAlpha by animateFloatAsState(
+        targetValue = if (panelVisible) 1f else 0f,
+        animationSpec = tween(if (panelVisible) FADE_IN_MS else FADE_OUT_MS),
+        label = "panelAlpha",
+    )
     var scene by remember { mutableStateOf<BookScene?>(null) }
     var bookState by remember { mutableStateOf<BookState?>(null) }
 
@@ -74,15 +88,45 @@ fun HomeVolume() {
     }
 
     SpatialView(
-        Modifier.pointerInput(scene) {
-            detectSpatialTapGesture(
-                context,
-                scene?.entity?.let { TargetEntity.hit(it) },
-            ) { tap ->
-                Log.i(TAG, "tap kind=${tap.interactionKind}")
-                bookState?.onTap()
+        Modifier
+            // 捏、射线、注视、控制器 —— 一切「远程」指向。
+            .pointerInput(scene) {
+                detectSpatialTapGesture(
+                    context,
+                    scene?.entity?.let { TargetEntity.hit(it) },
+                ) { tap ->
+                    Log.i(TAG, "tap kind=${tap.interactionKind}")
+                    bookState?.onTap()
+                }
             }
-        },
+            // 食指指尖直接戳到书上。**必须是独立的 pointerInput 块** —— 同一个
+            // pointerInput DSL 里不能出现两个 detectSpatial* 调用，它们会争抢同一条
+            // 事件流。
+            //
+            // 为什么 tap 那条路不够：`detectSpatialTapGesture` 给的是「一次完整点击」，
+            // 而指尖触碰在 SDK 里走的是 pointer 事件流，`InteractionKind.Poke`。两条路
+            // 都留着是刻意的互为兜底 —— [BookState.onTap] 是同步的，返回前相位就已经
+            // 推进了，所以同一次触碰即使被两条路都投递一遍，第二遍也会被相位闸吞掉。
+            // 日志里带上来源，真机上一眼能看出实际是哪条路生效。
+            .pointerInput(scene) {
+                detectSpatialPointerEvent(
+                    context,
+                    scene?.entity?.let { TargetEntity.hit(it) },
+                ) { events ->
+                    events.forEach { info ->
+                        // isDownEvent() 是 changedToDownIgnoreConsumed()，即这根手指的
+                        // 按下沿。用它而不是 `pressed`：pressed 在整个接触期间每帧都为
+                        // 真，会把一次触碰变成连续触发。左右手是两个不同的 pointerId，
+                        // 各自独立产生按下沿，所以「两只手都可以」不需要额外代码。
+                        if (info.kind == InteractionKind.Poke && info.isDownEvent()) {
+                            Log.i(TAG, "poke down pointerId=${info.pointerId}")
+                            bookState?.onTap()
+                        }
+                    }
+                    // 不消费事件：让上面的 tap 检测器照旧收到它自己那份。
+                    false
+                }
+            },
         initial = { content, attachments ->
             // 面板先挂，**再**去 load 那个 ~4 MB 的模型。顺序反过来的话，volume 在整个加载
             // 期间是全空的，邀请语「心中默念你的问题 / 然后触碰这本书」反而最后才到 —— 那
@@ -126,27 +170,41 @@ fun HomeVolume() {
 
                 val animator = loaded.animator
                 bookState = BookState(
+                    // 淡出/淡入包在动画两端：BookState 只在触碰被真正接受时才调这两个
+                    // 回调（动画途中的触碰会被它的闸拦掉），所以这里不用自己判重。
+                    // 文案替换发生在 alpha 已经归零的时刻，看不到硬切。
                     openBook = { onDone ->
-                        if (animator != null) animator.open(onDone) else onDone()
-                    },
-                    closeThenOpen = { onSwap, onDone ->
+                        panelVisible = false
                         if (animator != null) {
-                            animator.closeThenOpen(onSwap, onDone)
+                            animator.open { onDone(); panelVisible = true }
                         } else {
-                            onSwap()
-                            onDone()
+                            onDone(); panelVisible = true
+                        }
+                    },
+                    closeBook = { onDone ->
+                        panelVisible = false
+                        if (animator != null) {
+                            animator.closeBook { onDone(); panelVisible = true }
+                        } else {
+                            onDone(); panelVisible = true
                         }
                     },
                     drawAnswer = {
                         panelContent = PanelContent.AnswerText(repository.next().text)
+                    },
+                    showPrompt = {
+                        panelContent = PanelContent.Prompt
                     },
                 )
             }
         },
         attachments = {
             AttachmentPanel(id = ANSWER_PANEL_ID) {
-                AnswerPanel(panelContent)
+                AnswerPanel(panelContent, alpha = panelAlpha)
             }
         },
     )
 }
+
+private const val FADE_OUT_MS = 220
+private const val FADE_IN_MS = 520
