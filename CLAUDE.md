@@ -96,6 +96,34 @@ the book, swaps the answer **while it is shut**, then reopens it.
   `detectSpatialTapGesture` is absent from the Agent Vault api-reference, so its `null`-target
   semantics have no citable source. The fix holds either way — keying on `scene` means the
   closure always reads the current entity.
+- **Two `detectSpatial*` calls must never share one `pointerInput` block.** They compete for the
+  same event stream. `HomeVolume` therefore chains two separate `pointerInput(scene)` modifiers:
+  one for `detectSpatialTapGesture` (pinch / ray / gaze / controller), one for
+  `detectSpatialPointerEvent` (fingertip poke).
+- **Fingertip poke is `InteractionKind.Poke` on the generic pointer event, not hand tracking.**
+  The SDK's own design doc defines Poke as "tap interactive objects using the tip of the index
+  finger" and names event source type as the way to filter it. Raw hand joints
+  (`HandTrackingProvider`) would need **Full Space**, which a volumetric `WindowContainer`
+  cannot be — so joints are the wrong tool here, not merely the heavier one. Note the doc's
+  caveat about needing hand tracking for "strict physical contact" applies to **Pinch**, whose
+  activation range deliberately ignores collider size; Poke does not carry that caveat.
+- Fire poke on `SpatialPointerInfo.isDownEvent()`, not `pressed`. `pressed` is true every frame
+  of the contact and turns one touch into a stream; `isDownEvent()` is
+  `changedToDownIgnoreConsumed()`, the per-pointer rising edge. Each hand is its own
+  `pointerId`, so two-handed support needs no extra code. Return `false` from the callback so
+  the tap detector still receives its copy.
+- `detectSpatialPointerEvent` and `SpatialPointerInfo` are **also** missing from the
+  api-reference. Real signature, from `javap` on
+  `com.pico.spatial.ui/foundation/6.0.0/…/foundation-6.0.0.aar`:
+  `PointerInputScope.detectSpatialPointerEvent(context, target: TargetEntity?, (List<SpatialPointerInfo>) -> Boolean)`
+  — same shape as the tap detector, target included, so the SDK filters by entity for you.
+- **A collider much larger than its object can be worse than a tight one.** The book's collider
+  must cover both the closed and open poses, because `CollisionComponent` follows the entity
+  transform but *not* skeletal deformation — so it is the union of the two measured bounding
+  boxes, not a guess. Resist padding it into a big cube: the earlier 0.50 m cube reached 25 cm
+  past the book on all sides, and a hand reaching in would already be inside it before touching
+  anything, which plausibly suppressed the poke rising edge. Unproven, but the tight box costs
+  nothing.
 
 ## UI rule for this project (hard constraint)
 
