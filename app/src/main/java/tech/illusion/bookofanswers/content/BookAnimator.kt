@@ -39,7 +39,18 @@ import java.io.Closeable
  * generation 校验本身是主线程上的 check-then-act，因此无需同步。
  */
 class BookAnimator(
-    private val controller: AnimationPlaybackController,
+    /**
+     * 每个蒙皮网格一个控制器，**必须非空**。
+     *
+     * 为什么是列表而不是单个：这本书由三个独立的蒙皮网格组成（上封面、下封面、书页），
+     * 各自绑着同一条 `Take_001`，`playAnimation` 也各自返回一个控制器。只驱动其中一个
+     * 的话，画面上就只有那一层翻出去、其余仍是合着的厚块 —— 那正是「书没打开、只是往
+     * 右挪了一点」的真身。
+     *
+     * 同步靠的是「同一条片段、同一起始时间、同一速率」：定位、恢复、暂停都对全部控制器
+     * 施加，因此它们逐帧一致。进度只从 [clock] 读，避免多路采样互相打架。
+     */
+    private val controllers: List<AnimationPlaybackController>,
     private val scope: CoroutineScope,
     /**
      * 开合进度回调，0 = 完全合上，1 = 完全摊开。每个轮询 tick 调一次，并在区间收尾时
@@ -53,6 +64,13 @@ class BookAnimator(
      */
     private val onOpenness: (Float) -> Unit = {},
 ) : Closeable {
+
+    init {
+        require(controllers.isNotEmpty()) { "BookAnimator needs at least one controller" }
+    }
+
+    /** 读进度的基准控制器。所有控制器同步播放，取哪个都一样，固定取第一个以免多路采样打架。 */
+    private val clock: AnimationPlaybackController = controllers.first()
 
     /** 当前序列的协程。整个类同一时刻只有一个 job。 */
     private var job: Job? = null
@@ -75,8 +93,10 @@ class BookAnimator(
     fun showClosed() {
         if (closed) return
         cancelRunning()
-        controller.setTime(CLOSED_POSE)
-        controller.pause()
+        controllers.forEach {
+            it.setTime(CLOSED_POSE)
+            it.pause()
+        }
         onOpenness(0f)
     }
 
@@ -107,7 +127,7 @@ class BookAnimator(
         if (closed) return
         closed = true
         cancelRunning()
-        controller.close()
+        controllers.forEach { it.close() }
     }
 
     /** 取消在跑的序列，并让它的回调作废。 */
@@ -138,15 +158,17 @@ class BookAnimator(
         fromOpenness: Float,
         toOpenness: Float,
     ) {
-        controller.setTime(from)
-        controller.resume()
+        controllers.forEach {
+            it.setTime(from)
+            it.resume()
+        }
 
         // 终点按实测时长收口，且回退一帧：`getTime() < target` 要求精确命中，若运行时
         // 把时间钳在比 duration 差一个 tick 的位置，不回退就永远退不出轮询，每次都白烧
         // 满额超时预算。提前一帧收尾落在已经完全合上的姿态里，看不出来。
         // 有了重新推导过的帧常量，CLOSE_END 已经约等于 duration，这里只是兜底，
         // 同时也吸收测量漂移。
-        val duration = controller.getDuration()
+        val duration = clock.getDuration()
         val target = if (duration > 0f) minOf(to, duration - 1f / FPS) else to
 
         // 宽限上限取区间时长的 2 倍，最少 500ms。超时即强制收尾，
@@ -155,20 +177,32 @@ class BookAnimator(
 
         val span = (target - from).takeIf { it > 0f }
         val reached = withTimeoutOrNull(budgetMs) {
-            while (controller.getTime() < target) {
+            while (clock.getTime() < target) {
                 // 进度按「已播时长 / 区间时长」算，而不是按墙钟 —— 播放速率若被改动
                 // 或运行时掉帧，姿态仍然跟得住实际画面。
-                val p = span?.let { ((controller.getTime() - from) / it).coerceIn(0f, 1f) } ?: 1f
+                val p = span?.let { ((clock.getTime() - from) / it).coerceIn(0f, 1f) } ?: 1f
                 onOpenness(fromOpenness + (toOpenness - fromOpenness) * p)
                 delay(POLL_INTERVAL_MS)
             }
             true
         }
         if (reached == null) {
-            Log.w(TAG, "segment $from -> $to timed out at ${controller.getTime()}, forcing completion")
+            Log.w(TAG, "segment $from -> $to timed out at ${clock.getTime()}, forcing completion")
         }
-        controller.pause()
-        // 收口到端点。轮询最后一次采样通常停在 0.97~0.99，不收口书会差一点没摆平。
+        // 姿态收口：**先把片段时间钉死，再暂停。**
+        //
+        // 不能把最终姿态交给轮询落点。实测这台模拟器上 `delay(16)` 实际间隔到过 90–125ms，
+        // 于是最后一跳会冲过 target 一大截：合书段量到 tEnd=4.540 而片段只到 4.458
+        // （duration），网格就停在片段之外的姿态上 —— 画面上是一本停在半开的书。开书段
+        // 同样冲到 1.000（目标 0.875），只因为 161–490 帧都是摊开驻留才看不出来。
+        //
+        // 钉到 target 而不是 to：target 已经按 duration 回退过一帧，落在片段内。对合书
+        // 而言 f599 与 f600 的姿态一致（都已完全合上），视觉上没有差别。
+        controllers.forEach {
+            it.setTime(target)
+            it.pause()
+        }
+        // 实体变换也收口到端点。轮询最后一次采样通常停在 0.97~0.99，不收口书会差一点没摆平。
         onOpenness(toOpenness)
     }
 

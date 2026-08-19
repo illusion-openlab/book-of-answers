@@ -30,12 +30,13 @@ class BookScene(
      * 释放动画资源**并销毁实体**。
      *
      * [AnimationPlaybackController][com.pico.spatial.core.ecs.animation.AnimationPlaybackController]
-     * 归 [BookAnimator] 所有，只由它 close —— 本类从不直接持有 controller，所以不存在重复
+     * 全部归 [BookAnimator] 所有（每个蒙皮网格一个），只由它 close —— 本类从不直接持有
+     * controller，所以不存在重复
      * close。（`stopAllAnimations` 大概推测是幂等的，但 api-reference 只写了「停止该实体上所有
      * 正在播放的动画」，没有对重复调用表态，所以别把幂等当成有据可查的事实。）
      *
-     * **顺序不能颠倒：先 close animator，再 destroy 实体。** animator 持有的 controller 来自
-     * `meshEntity.playAnimation(...)`，而 meshEntity 是本实体的子节点 —— `destroy(recursively =
+     * **顺序不能颠倒：先 close animator，再 destroy 实体。** animator 持有的各个 controller 来自
+     * `meshEntity.playAnimation(...)`，而这些 meshEntity 都是本实体的子节点 —— `destroy(recursively =
      * true)` 会把它一起销毁，之后再 `controller.close()` 就是对已销毁的宿主动手。
      *
      * 实体的销毁必须在这里做。曾经的注释把它推给「把实体加进 content 的那一层」，但没有任何
@@ -203,12 +204,18 @@ suspend fun loadBookScene(scope: CoroutineScope): BookScene? {
     )
     entity.components.set(InteractableComponent())
 
-    val meshEntity = entity.findSkinnedMeshEntity().firstOrNull()
-    val resource = meshEntity?.getAnimationResources()?.firstOrNull()
-    val animator = if (meshEntity != null && resource != null) {
-        // 不调 setSpeed：按作者标定的速度播。快慢是设备上看着定的事（Task 10），
-        // 现在没有依据，也不为此留旋钮。
-        BookAnimator(meshEntity.playAnimation(resource), scope) { openness ->
+    // 这本书由**三个**蒙皮网格组成（上封面、下封面、书页），各自绑着同一条 Take_001。
+    // 必须把它们全部驱动起来 —— 曾经这里是 `findSkinnedMeshEntity().firstOrNull()`，
+    // 结果只有一层翻出去、其余仍是合着的厚块，加上下面的中心补偿一起看，就成了
+    // 「书没打开、只是往右挪了一点」。上一个模型只有一个蒙皮网格，所以这个 bug 一直藏着。
+    val skinnedMeshes = entity.findSkinnedMeshEntity()
+    // 不调 setSpeed：按作者标定的速度播。快慢是设备上看着定的事（Task 10），
+    // 现在没有依据，也不为此留旋钮。
+    val controllers = skinnedMeshes.mapNotNull { mesh ->
+        mesh.getAnimationResources().firstOrNull()?.let { mesh.playAnimation(it) }
+    }
+    val animator = if (controllers.isNotEmpty()) {
+        BookAnimator(controllers, scope) { openness ->
             // 姿态换算归本文件所有：BookAnimator 只负责播放与报进度，不碰实体。
             val (pos, euler) = poseFor(openness)
             entity.components[TransformComponent::class.java]?.apply {
@@ -221,7 +228,11 @@ suspend fun loadBookScene(scope: CoroutineScope): BookScene? {
     }
 
     if (animator == null) {
-        Log.w(TAG, "no animation resource on book model — falling back to still mode")
+        Log.w(
+            TAG,
+            "no animation resource on book model (skinnedMeshes=${skinnedMeshes.size}) " +
+                "— falling back to still mode",
+        )
     } else {
         // 这里调 showClosed() 是安全的：它会作废在跑序列的未投递回调，但此刻刚构造完，
         // 什么都没在播，也不可能有触碰进来。播放途中调它会把状态机永久卡住，见
@@ -234,6 +245,7 @@ suspend fun loadBookScene(scope: CoroutineScope): BookScene? {
     Log.i(
         TAG,
         "book loaded, animated=${animator != null}, " +
+            "skinnedMeshes=${skinnedMeshes.size}, controllers=${controllers.size}, " +
             "tapBox=$TAP_BOX_SIZE @$TAP_BOX_CENTER, center=$BOOK_CENTER",
     )
     return BookScene(entity, animator)

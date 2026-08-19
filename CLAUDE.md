@@ -117,7 +117,40 @@ the book, swaps the answer **while it is shut**, then reopens it.
   `com.pico.spatial.ui/foundation/6.0.0/…/foundation-6.0.0.aar`:
   `PointerInputScope.detectSpatialPointerEvent(context, target: TargetEntity?, (List<SpatialPointerInfo>) -> Boolean)`
   — same shape as the tap detector, target included, so the SDK filters by entity for you.
-- **A downloaded USDZ can bind `skel:animationSource` to the wrong prims, and nothing warns you.**
+- **The book has THREE skinned meshes; animate all of them.** `findSkinnedMeshEntity()` returns a
+  list — top cover, bottom cover, pages — each with its own `Take_001` controller.
+  `BookScene` once took `.firstOrNull()`, so exactly one slab peeled off while the rest stayed a
+  closed block; together with the centre compensation below it read as **"the book didn't open, it
+  just slid right."** The previous model had a single skinned mesh, which is why the bug hid for so
+  long. `BookAnimator` therefore takes `List<AnimationPlaybackController>`, applies
+  `setTime`/`resume`/`pause` to all of them, and reads progress from only the first (`clock`) so
+  multiple samplers can't fight. Startup logs `skinnedMeshes=3, controllers=3` — if those two
+  numbers ever disagree, a mesh lost its clip.
+- **Pin the end pose with `setTime`; never let the poll's landing point decide it.**
+  `AnimationPlaybackController.getTime()` on this emulator sat at exactly `0.0` for ~645 ms after
+  `resume()` and then jumped straight to ~1.0 s, so the last poll overshoots badly: the close
+  segment measured `tEnd = 4.540` against a `duration` of `4.4583` — past the end of the clip, and
+  the mesh stopped in a pose outside it (a book frozen half-open). `playSegment` now ends with
+  `setTime(target); pause()` on every controller, `target` being the duration-clamped endpoint.
+  The open segment overshot too (`1.000` vs a target of `0.875`) but that landed inside the
+  161–490 open hold, which is why only closing looked broken.
+- **The emulator's screenshot is not a faithful witness for the 2D panel.** A capture showed the
+  book correctly open while the panel still displayed the prompt — yet the logs for that same frame
+  read `drawAnswer -> 不必耿耿于怀` followed by
+  `panel compose content=AnswerText(text=不必耿耿于怀) alpha=1.0`. The 3D content in the capture was
+  current and the panel's texture was stale. Trust logs over screenshots for panel copy, and never
+  conclude "the state machine didn't fire" from a screenshot alone.
+- **Gate evidence on log lines, not on `sleep`.** Several wrong conclusions here came from
+  screenshots that landed before the tap they were meant to observe, or after the next one. Each
+  `pico-cli shell` round trip costs seconds, so even log polling lags — the reliable trick is to
+  make the state under test **last much longer than the sampling jitter** (the throwaway probe held
+  the open pose 45 s) rather than trying to hit a narrow window.
+- **A downloaded USDZ can bind `skel:animationSource` to the wrong prims — but that was NOT what
+  broke this app.** Correcting an earlier note here: the defect below is real and was fixed, yet it
+  was never the cause of the symptom. The SDK reported `animated=true` *while the binding was still
+  broken*, which proves it does not resolve animations through UsdSkel's inherited
+  `skel:animationSource` at all. The repair only makes the file conformant for pxr/`usdrecord` and
+  other spec-following tools; the app-visible bug was the `firstOrNull()` above.
   This model shipped from Sketchfab with `skel:animationSource` authored on the three *Mesh*
   prims — which are **siblings** of the `Skeleton`, not its ancestors. UsdSkel resolves a
   skeleton's animation source from itself or an ancestor only, so the skeleton got nothing:
@@ -242,12 +275,12 @@ Healthy startup is exactly two lines: `AnswerSource: loaded 1094 answers` and
 animation fell back to still mode. Any `BookAnimator` line at all is a problem — the tag only
 ever logs segment timeouts, so **silence is the pass condition**.
 
-**`animated=true` does not prove the book will actually move.** It only says the SDK found an
-animation resource. A model can ship a `SkelAnimation` that no skeleton is bound to; playback
-then advances time and reports no timeout while the mesh never deforms. That exact failure
-shipped here once — see the skel-binding gotcha. The only cheap proof is the offline check in
-that entry; on-screen, the tell was the book sliding sideways without opening (the sideways
-slide is `BookScene`'s centre compensation doing its job for a deformation that never came).
+**`animated=true` does not prove the book will actually move**, and neither does the absence of a
+`BookAnimator` timeout. Both were true throughout the "book only slides right" bug. The startup
+line now carries `skinnedMeshes=N, controllers=N` precisely because that pair is the signal worth
+reading: every skinned mesh must have a controller, or part of the book stays shut. A sideways
+slide with no opening is the signature of `BookScene`'s centre compensation running for a
+deformation that never arrived.
 
 Clear logcat before *every* launch. A stale line from the previous run reads as current and
 has already produced one wrong conclusion in this project.
