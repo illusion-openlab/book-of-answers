@@ -45,7 +45,7 @@ or a plain panel just to make something compile.
 | `app/src/main/java/.../data/Answer.kt` | The answer value type. |
 | `app/src/main/java/.../platform/LaunchActivity.kt` | Thin `SpatialLaunchActivity` subclass. The launcher entry point; holds the container meta-data. |
 | `app/src/main/java/.../platform/SpatialApplication.kt` | Application class wiring `mainApp` into the Spatial runtime. |
-| `app/src/main/assets/book.usdz` | The book model (~300 KB, 460 tris, Sketchfab "Book of Mythical Newar", clip `Take_001`). USD units are cm; closed it measures 0.42 × 0.08 × 0.59 m, so `BOOK_SCALE = 0.489` brings it to book size. **This file is patched, not the original download** — see the skel-binding gotcha below. |
+| `app/src/main/assets/book.usdz` | The book model — `Simple_animated_book.usdz`, ~4 MB, one skinned mesh, 16 joints, timeline frames 5–400 @ 120 fps (`getDuration()` = 3.2917 s). USD units are cm and it is **already real-world scale: `BOOK_SCALE = 1`, do not rescale.** Shipped byte-identical to the download. |
 | `app/src/main/assets/answers.txt` | The answer corpus: 1094 entries, longest is 19 characters. `AnswerSource` logs `loaded 1094 answers` — a count of 3 means the asset did not ship. |
 | `app/src/test/java/...` | Unit tests for `AnswerParser`, `AnswerRepository`, `BookState`. Run with `./gradlew testDebugUnitTest`. |
 | `gradle/libs.versions.toml` | Version catalog, including `spatialBom`. |
@@ -69,11 +69,18 @@ the book, swaps the answer **while it is shut**, then reopens it.
 - **`EulerAngles(pitch, yaw, roll)` is extrinsic ZXY** (`M = M_yaw_Y · M_pitch_X · M_roll_Z`).
   The book model's cover normal is local `+X`, which is the pitch axis — so at `roll = 0`,
   changing `pitch` cannot change which way the cover faces at all. `roll` is what lays the
-  book down. Do not iterate on `pitch` to aim the cover.
-- **The model's open animation itself adds roll ≈ +90°.** At `roll = 0` the closed book
-  stands upright and the open book is dead flat. So closed-looks-good and open-looks-good
-  pull `roll` in opposite directions; the current value is a deliberate compromise, see the
-  `BOOK_ORIENTATION` KDoc.
+  book down. Do not iterate on `pitch` to aim the cover. `Rz(+90) · (1,0,0) = (0,1,0)`, which is
+  why `ROLL_CLOSED = +90` (not −90) puts the *front* cover up in the resting pose.
+- **This model's animation carries its own 90° of pose change, so entity `roll` must be
+  interpolated — a constant cannot work.** Measured: at entity `roll = 0` the closed book stands
+  upright (0.0279 × 0.2052 in x/y) while the open book is dead flat (0.4409 × 0.0291). So a
+  constant `roll = 0` gives a good open pose and a book standing on end when shut, and a constant
+  `roll = ±90` gives a good closed pose and an open book that is a vertical sliver — both were
+  seen on screen. `poseFor` therefore lerps `ROLL_CLOSED = 90` → `ROLL_OPEN = 0` against openness.
+- **Because the entity rotates, the position compensation must rotate the centre offset too.**
+  `position = BOOK_CENTER − R · (scaled centre offset)` with `R = Ry(yaw) · Rz(roll)` — the matrix
+  multiplied out in `poseFor`'s KDoc. Subtracting the raw offset (correct for a non-rotating
+  entity) puts the book in the wrong place here.
 - **`ShapeResource.createBox` centres on the entity origin, and this model's origin is at the
   book's base**, not its centre (`getVisualBounds().center.y ≈ 0.101`, half the height). The
   `offsetByTranslation(bounds.center)` in `BookScene.kt` is therefore load-bearing. A wrong
@@ -117,8 +124,9 @@ the book, swaps the answer **while it is shut**, then reopens it.
   `com.pico.spatial.ui/foundation/6.0.0/…/foundation-6.0.0.aar`:
   `PointerInputScope.detectSpatialPointerEvent(context, target: TargetEntity?, (List<SpatialPointerInfo>) -> Boolean)`
   — same shape as the tap detector, target included, so the SDK filters by entity for you.
-- **The book has THREE skinned meshes; animate all of them.** `findSkinnedMeshEntity()` returns a
-  list — top cover, bottom cover, pages — each with its own `Take_001` controller.
+- **`findSkinnedMeshEntity()` returns a list — animate every entry.** The current model has one
+  skinned mesh, but the Mythical-Newar model had three (top cover, bottom cover, pages), each with
+  its own `Take_001` controller.
   `BookScene` once took `.firstOrNull()`, so exactly one slab peeled off while the rest stayed a
   closed block; together with the centre compensation below it read as **"the book didn't open, it
   just slid right."** The previous model had a single skinned mesh, which is why the bug hid for so
@@ -145,8 +153,11 @@ the book, swaps the answer **while it is shut**, then reopens it.
   `pico-cli shell` round trip costs seconds, so even log polling lags — the reliable trick is to
   make the state under test **last much longer than the sampling jitter** (the throwaway probe held
   the open pose 45 s) rather than trying to hit a narrow window.
-- **A downloaded USDZ can bind `skel:animationSource` to the wrong prims — but that was NOT what
-  broke this app.** Correcting an earlier note here: the defect below is real and was fixed, yet it
+- **A downloaded USDZ can bind `skel:animationSource` to the wrong prims — but that never broke
+  this app, and the current asset ships unpatched.** Both Sketchfab models carried the defect
+  (`GetAnimQuery()` invalid on the shipped file), and both animated fine in the app, so the SDK
+  plainly does not resolve animations through UsdSkel's inherited binding. Patch a **temp copy**
+  when you need offline skinning measurements; leave the shipped asset alone. Correcting an earlier note here: the defect below is real and was fixed, yet it
   was never the cause of the symptom. The SDK reported `animated=true` *while the binding was still
   broken*, which proves it does not resolve animations through UsdSkel's inherited
   `skel:animationSource` at all. The repair only makes the file conformant for pxr/`usdrecord` and
@@ -173,19 +184,27 @@ the book, swaps the answer **while it is shut**, then reopens it.
 - **Measure deformed poses offline, never from `getVisualBounds()`.** That runtime call reflects
   the entity transform but *not* skeletal deformation, so it cannot tell you where the open book
   sits. `BookScene`'s `CENTER_CLOSED` / `CENTER_OPEN` and the collider union all come from pxr
-  skinning computed per frame. Measured for this model (metersPerUnit = 0.01):
-  frame 65 closed → size 0.4226 × 0.0840 × 0.5931, centre (0.0027, 0.0441, 0);
-  frames 165–490 open → size 0.9068 × 0.0710 × 0.5931, centre (−0.2394, 0.0372, 0);
-  490 → 600 closes again. x more than doubles, so the open pose is a real two-page spread.
+  skinning computed per frame. Measured for the current model (metersPerUnit = 0.01):
+  frames 5–100 closed hold → size 0.0279 × 0.2052 × 0.2893, centre (0, 0.1011, 0);
+  100 → 190 opens; frames 190–302 open hold → size 0.4409 × 0.0291 × 0.2893,
+  centre (0, 0.0131, 0); 302 → 400 closes, and frame 400 is identical to frame 5.
+  Only y moves (the centre drops 0.088 m). **`BookAnimator` starts from frame 100, not 5** —
+  5–100 is a dead 0.79 s hold, and playing it would stall the tap response for almost a second.
   `ComputeSkinnedPoints` returns `True` even when the skinning transforms are all identity —
   check the transforms, not the return value.
 - **A collider much larger than its object can be worse than a tight one.** The book's collider
   must cover both the closed and open poses, because `CollisionComponent` follows the entity
   transform but *not* skeletal deformation — so it is the union of the two measured bounding
-  boxes, not a guess. Resist padding it into a big cube: the earlier 0.50 m cube reached 25 cm
+  boxes, not a guess. Resist padding it into a big cube: an earlier 0.50 m cube reached 25 cm
   past the book on all sides, and a hand reaching in would already be inside it before touching
-  anything, which plausibly suppressed the poke rising edge. Unproven, but the tight box costs
+  anything, which plausibly suppressed the poke rising edge. Unproven, but a tight box costs
   nothing.
+  **Open item with the current model:** because its entity rolls +90 → 0, the collider rolls with
+  it, so the local-space union box (0.46 × 0.22 × 0.31 at y = 0.1011) stands 0.46 m tall in world
+  space at the closed pose — roughly 0.23 m of empty box above and below a flat shut book. Fine
+  for ray and pinch, over-eager for a fingertip. A static collider cannot track a rotating entity,
+  and moving it to a bare mesh-less child entity was already tried and was not hittable. This is
+  the first thing to revisit if fingertip poke feels too sensitive on a device.
 
 ## UI rule for this project (hard constraint)
 

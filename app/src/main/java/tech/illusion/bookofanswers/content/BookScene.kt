@@ -71,74 +71,123 @@ private val BOOK_CENTER = Vector3(0f, -0.2f, 0.3f)
 /**
  * 模型缩放。
  *
- * 原始模型合上时是 0.423 × 0.084 × 0.593 m（离线用 UsdSkel 解算蒙皮后顶点量的），
- * 按书脊长 0.593 → 0.29 定出 0.489，缩放后是 0.207 × 0.041 × 0.29 m，真实书本尺寸。
+ * 这个模型合上时实测 0.0279 × 0.2052 × 0.2893 m —— **本来就是真实书本尺寸，不要缩放。**
+ * 保留这个常量而不是直接删掉，是因为下面的中心偏移要乘它；换模型时改这一个值即可。
  */
-private const val BOOK_SCALE = 0.489f
+private const val BOOK_SCALE = 1f
 
-/** 绕 Y 轴的朝向。0 表示不做额外旋转；书面朝上，靠这个值转到正对使用者。 */
+/** 绕 Y 轴的朝向。0 = 书脊front-back、页面左右摊开，正对使用者时读起来最自然。 */
 private const val BOOK_YAW = 0f
 
 /**
  * 合上与摊开时，网格视觉中心相对实体原点的偏移（**模型自身单位**，未乘 [BOOK_SCALE]）。
  *
- * 离线实测（`UsdSkel` 解算蒙皮后顶点，取包围盒中心）：
+ * 离线实测（`UsdSkel` 解算蒙皮后顶点，取包围盒中心；metersPerUnit = 0.01）：
  *
- * | 状态 | 帧 | 中心 | 尺寸 |
+ * | 状态 | 帧 | 尺寸 | 中心 |
  * |---|---|---|---|
- * | 合上 | 65      | (0.0027, 0.0441, 0) | 0.423 × 0.084 × 0.593 |
- * | 摊开 | 161–490 | (−0.2394, 0.0372, 0) | 0.907 × 0.071 × 0.593 |
+ * | 合上 | 5–100   | 0.0279 × 0.2052 × 0.2893 | (0, 0.1011, 0) |
+ * | 摊开 | 190–302 | 0.4409 × 0.0291 × 0.2893 | (0, 0.0131, 0) |
  *
- * 关键是 x：书摊开时中心**横移了 0.24（模型单位）**，因为封面绕书脊转 90° 把整体甩向
- * 一侧。不补偿的话书会在开合过程中明显横着滑走。
- *
- * 两个姿态在 y 方向都很薄（0.084 / 0.071），也就是说这本书**本来就是躺着开合的**，
- * 不需要像上一个模型那样用 roll 插值把它按平 —— 那套补偿已经整段删掉。
+ * 关键是 y：实体原点在书**底**，而书摊开后整体塌下去 0.088 m。x/z 两个姿态都是 0，
+ * 所以只有 y 需要补偿 —— 但它会被 [poseFor] 里的 roll 旋转带到别的轴上去。
  *
  * 为什么必须离线量：运行时 `getVisualBounds()` 不反映骨骼形变，播到哪一帧都返回同一组数。
  */
-private val CENTER_CLOSED = Vector3(0.0027f, 0.0441f, 0f)
-private val CENTER_OPEN = Vector3(-0.2394f, 0.0372f, 0f)
+private val CENTER_CLOSED = Vector3(0f, 0.1011f, 0f)
+private val CENTER_OPEN = Vector3(0f, 0.0131f, 0f)
+
+/**
+ * 实体 roll 的两端（度）。**这是让「合上也平放、摊开也平放」成立的唯一办法。**
+ *
+ * 这个模型的动画自带 90° 的姿态变化：在实体 roll = 0 时，合上的书是**竖着立起来的**
+ * （y 高 0.205、x 薄 0.028），而摊开的书是**平的**（y 薄 0.029、x 宽 0.441）。于是：
+ *
+ * - 恒定 roll = 0   → 摊开好看，合上是立着的（用户明确否掉了「竖起来」）
+ * - 恒定 roll = ±90 → 合上好看，摊开变成一片竖立的薄片（这是真机上踩过的坑）
+ *
+ * 两端拉不到一起，所以只能跟着开合进度**插值**：合上时 +90 把书按平，摊开时回到 0
+ * 让动画自己的平躺姿态生效。
+ *
+ * 取 +90 而不是 −90：模型封面法向是局部 +X，`Rz(+90) · (1,0,0) = (0,1,0)`，
+ * 合上时封面朝上 —— 静置态是用户看得最久的一帧，应该看到封面而不是封底。
+ */
+private const val ROLL_CLOSED = 90f
+private const val ROLL_OPEN = 0f
 
 /**
  * 触碰区的尺寸与中心偏移（米，实体局部坐标系，已含 [BOOK_SCALE]）。
  *
- * 碰撞体只跟随实体变换、不跟随骨骼动画，所以它必须是一个**同时覆盖合上与摊开两个姿态**
- * 的静态盒子。按两个姿态的包围盒求并集算出来的：
+ * 碰撞体只跟随实体变换、不跟随骨骼形变，所以必须是一个同时覆盖两个姿态的静态盒子。
+ * 按两个姿态在**实体局部空间**的包围盒求并集：
  *
  * | 轴 | 并集区间 | 尺寸 | 中心 |
  * |---|---|---|---|
- * | x | [−0.3388, 0.1047] | 0.444 | −0.117 |
- * | y | [ 0.0008, 0.0421] | 0.041 |  0.021 |
- * | z | [−0.1450, 0.1450] | 0.290 |  0.000 |
+ * | x | [−0.2205, 0.2205] | 0.441 | 0.000 |
+ * | y | [−0.0015, 0.2037] | 0.205 | 0.101 |
+ * | z | [−0.1446, 0.1446] | 0.289 | 0.000 |
  *
- * y 方向放宽到 0.10：书本身只有 4 cm 厚，但指尖是从上方靠近的，留一点余量让接触判定
- * 早一点成立，手感上不会「明明碰到了却没反应」。x/z 只留很小余量 —— 这是**指尖直接触碰**
- * 的判定区，做太大就变成戳空气也触发。
- *
- * 上一个模型必须用正方体，因为实体 roll 在开合过程中会转 90°、非立方盒子会歪；这本书
- * 躺着开合、实体不旋转，所以可以贴合真实形状。
+ * **已知取舍：这个盒子会跟着实体 roll 一起转。** 合上时实体 roll = +90，盒子的 x/y 互换，
+ * 于是它在世界 y 方向撑到 0.46 m —— 平放的合上书本上下各多出约 0.23 m 的空盒子。射线与
+ * 捏合无所谓，但指尖触碰会偏灵敏（手伸过去可能在碰到书之前就已经在盒子里了）。
+ * 上一个模型不需要 roll 插值，所以能用贴合形状的紧盒子；这个模型换不来。真机验收时若
+ * 指尖触碰确实偏灵敏，这里是第一个要动的地方。
  */
-private val TAP_BOX_SIZE = Vector3(0.47f, 0.10f, 0.32f)
-private val TAP_BOX_CENTER = Vector3(-0.117f, 0.021f, 0f)
+private val TAP_BOX_SIZE = Vector3(0.46f, 0.22f, 0.31f)
+private val TAP_BOX_CENTER = Vector3(0f, 0.1011f, 0f)
 
 /**
  * 按开合进度算出实体应有的位置与朝向。`openness` 0 = 合上，1 = 摊开。
  *
- * 位置 = 目标中心 − 缩放后的当前中心偏移，于是书的视觉中心始终钉在 [BOOK_CENTER]，
- * 看起来就是「原地躺着打开」。
+ * 位置的算法是「让视觉中心始终钉在 [BOOK_CENTER]」：
+ *
+ * ```
+ * position = BOOK_CENTER − R · (缩放后的中心偏移)
+ * ```
+ *
+ * `R` 必须参与进来，不能像上一个模型那样直接减偏移量 —— 因为这里实体在开合过程中
+ * 真的在转（[ROLL_CLOSED] → [ROLL_OPEN]），偏移向量会跟着转到别的轴上去。
+ *
+ * `EulerAngles(pitch, yaw, roll)` 是**外旋 ZXY**，即 `M = Ry(yaw) · Rx(pitch) · Rz(roll)`。
+ * 本项目 pitch 恒为 0，于是 `M = Ry(yaw) · Rz(roll)`，作用在 `(0, cy, 0)` 上展开得到
+ * 下面三行 —— 不是眼估，是把矩阵乘开：
+ *
+ * ```
+ * Rz(θ) · (0, cy, 0)      = (−cy·sinθ,  cy·cosθ, 0)
+ * Ry(ψ) · (vx, vy, 0)     = ( vx·cosψ,  vy,      −vx·sinψ)
+ * ```
  */
 private fun poseFor(openness: Float): Pair<Vector3, EulerAngles> {
     val t = openness.coerceIn(0f, 1f)
-    val ox = (CENTER_CLOSED.x + (CENTER_OPEN.x - CENTER_CLOSED.x) * t) * BOOK_SCALE
-    val oy = (CENTER_CLOSED.y + (CENTER_OPEN.y - CENTER_CLOSED.y) * t) * BOOK_SCALE
-    val oz = (CENTER_CLOSED.z + (CENTER_OPEN.z - CENTER_CLOSED.z) * t) * BOOK_SCALE
+
+    // 中心偏移：x/z 两端都是 0，但仍然按通式插值，换模型时不必回来补这两行。
+    val cx = (CENTER_CLOSED.x + (CENTER_OPEN.x - CENTER_CLOSED.x) * t) * BOOK_SCALE
+    val cy = (CENTER_CLOSED.y + (CENTER_OPEN.y - CENTER_CLOSED.y) * t) * BOOK_SCALE
+    val cz = (CENTER_CLOSED.z + (CENTER_OPEN.z - CENTER_CLOSED.z) * t) * BOOK_SCALE
+
+    val roll = ROLL_CLOSED + (ROLL_OPEN - ROLL_CLOSED) * t
+    val rollRad = Math.toRadians(roll.toDouble())
+    val yawRad = Math.toRadians(BOOK_YAW.toDouble())
+    val sinR = kotlin.math.sin(rollRad).toFloat()
+    val cosR = kotlin.math.cos(rollRad).toFloat()
+    val sinY = kotlin.math.sin(yawRad).toFloat()
+    val cosY = kotlin.math.cos(yawRad).toFloat()
+
+    // Rz(roll) 作用在 (cx, cy, cz) 上
+    val vx = cx * cosR - cy * sinR
+    val vy = cx * sinR + cy * cosR
+    val vz = cz
+    // 再叠 Ry(yaw)
+    val ox = vx * cosY + vz * sinY
+    val oy = vy
+    val oz = -vx * sinY + vz * cosY
+
     val position = Vector3(
         BOOK_CENTER.x - ox,
         BOOK_CENTER.y - oy,
         BOOK_CENTER.z - oz,
     )
-    return position to EulerAngles(0f, BOOK_YAW, 0f)
+    return position to EulerAngles(0f, BOOK_YAW, roll)
 }
 
 /**
@@ -177,15 +226,7 @@ suspend fun loadBookScene(scope: CoroutineScope): BookScene? {
         setEulerAngles(e0)
     }
 
-    // 碰撞体挂在书实体上，形状是**正方体**。
-    //
-    // 为什么是正方体而不是按包围盒量：碰撞体只跟随实体变换，不跟随骨骼动画。书的「摊平」
-    // 是动画里的骨骼形变，碰撞体感知不到，所以按合上姿态量出来的薄板（0.028 × 0.205 ×
-    // 0.289）在书摊开后仍是一块立着的窄板 —— 实机上只有书正中一条竖缝点得到。而且实体
-    // roll 在开合过程中从 -90° 转到 0°，非立方的盒子转过去就歪了。正方体旋转不变。
-    //
-    // 边长按离线量出的摊开尺寸定：摊开后是 0.441 × 0.029 × 0.289，取 0.48 留一点余量。
-    // 它是隐形的，场景里也没有别的可点目标，宁可大一点 —— 点不中比太灵敏难受得多。
+    // 碰撞体挂在书实体上。形状与取舍见 TAP_BOX_SIZE 的 KDoc。
     //
     // 也试过把碰撞挪到一个独立的空实体上，实机点不到：裸 Entity 没有 ModelComponent，
     // 输入命中似乎要求实体有可渲染网格。书本身有网格，命中是已验证的。
@@ -204,10 +245,8 @@ suspend fun loadBookScene(scope: CoroutineScope): BookScene? {
     )
     entity.components.set(InteractableComponent())
 
-    // 这本书由**三个**蒙皮网格组成（上封面、下封面、书页），各自绑着同一条 Take_001。
-    // 必须把它们全部驱动起来 —— 曾经这里是 `findSkinnedMeshEntity().firstOrNull()`，
-    // 结果只有一层翻出去、其余仍是合着的厚块，加上下面的中心补偿一起看，就成了
-    // 「书没打开、只是往右挪了一点」。上一个模型只有一个蒙皮网格，所以这个 bug 一直藏着。
+    // 把**所有**蒙皮网格都驱动起来。这个模型只有一个，但上一个模型有三个，只播第一个
+    // 会导致只有一层翻出去、其余仍是合着的厚块。按列表处理，换模型时不会再踩。
     val skinnedMeshes = entity.findSkinnedMeshEntity()
     // 不调 setSpeed：按作者标定的速度播。快慢是设备上看着定的事（Task 10），
     // 现在没有依据，也不为此留旋钮。

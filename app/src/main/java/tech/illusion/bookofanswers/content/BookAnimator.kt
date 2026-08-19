@@ -13,8 +13,8 @@ import java.io.Closeable
 /**
  * 对模型内置的 `Demo` 骨骼动画做区间定位播放。
  *
-  * 该动画的实际内容是「开书 → 驻留 → 合书」，不含翻页。分段常量见伴生对象，
- * 都由离线解算的关节曲线定出，不是猜的。
+  * 该动画的实际内容是「合上驻留 → 开书 → 摊开驻留 → 合书」，不含翻页。分段常量见伴生
+ * 对象，都由离线逐帧解算蒙皮包围盒定出，不是猜的。
  * `scope` 必须是主线程 scope：[AnimationPlaybackController] 标注了 `@MainThread`，
  * 且 `BookState.phase` 是无同步的普通 `var`。本类不做任何 dispatcher 切换，
  * 因此所有回调都在 `scope` 的线程（即主线程）上投递。
@@ -212,22 +212,27 @@ class BookAnimator(
 
         /**
          * 片段的首帧。controller 的时间轴以此为零点，不是 frame 0 —— 本模型时间轴是
-         * 65 → 600，`getDuration()` 应约等于 (600-65)/120 = 4.458s。
+         * 5 → 400，`getDuration()` 实测 3.29166s = (400−5)/120。
          */
-        const val CLIP_START_FRAME = 65f
+        const val CLIP_START_FRAME = 5f
 
         private fun atFrame(frame: Float) = (frame - CLIP_START_FRAME) / FPS
 
-        // 离线用 UsdSkel 解算关节曲线量出的分段（模型 Kiano88 Book of Mythical Newar）：
-        //   frame  65        两个关节都在 0°，合上
-        //   frame  65 → 161  n13 与 n12 先后转到 90°，开书
-        //   frame 161 → 490  都停在 90°，摊开驻留
-        //   frame 490 → 600  对称回到 0°，合书
-        val CLOSED_POSE = atFrame(65f)      // 0.000s
-        val OPEN_START = atFrame(65f)       // 0.000s
-        val OPEN_END = atFrame(170f)        // 0.875s，比 161 多留一点余量
-        val CLOSE_START = atFrame(490f)     // 3.542s
-        val CLOSE_END = atFrame(600f)       // 4.458s
+        // 离线用 UsdSkel 解算蒙皮后顶点、逐帧量包围盒定出的分段
+        // （模型 Simple_animated_book，metersPerUnit = 0.01）：
+        //
+        //   frame   5 → 100  合上驻留，尺寸恒为 0.0279 × 0.2052 × 0.2893
+        //   frame 100 → 190  张开
+        //   frame 190 → 302  摊开驻留，尺寸恒为 0.4409 × 0.0291 × 0.2893
+        //   frame 302 → 400  合拢，400 与 5 完全一致
+        //
+        // **合上态取 frame 100 而不是 5**：5–100 这 0.79s 完全静止，从 5 起播的话触碰之后
+        // 会先卡将近一秒才见动静。从 100 起播，动作立刻开始，而 100 与 5 的姿态一模一样。
+        val CLOSED_POSE = atFrame(100f)     // 0.792s
+        val OPEN_START = atFrame(100f)      // 0.792s
+        val OPEN_END = atFrame(195f)        // 1.583s，比驻留起点 190 多留一点余量
+        val CLOSE_START = atFrame(302f)     // 2.475s，合拢刚起步
+        val CLOSE_END = atFrame(400f)       // 3.292s ≈ duration，会被回退一帧钳到 3.283
 
         const val POLL_INTERVAL_MS = 16L
         const val MIN_BUDGET_MS = 500L
