@@ -153,11 +153,24 @@ the book, swaps the answer **while it is shut**, then reopens it.
   `pico-cli shell` round trip costs seconds, so even log polling lags — the reliable trick is to
   make the state under test **last much longer than the sampling jitter** (the throwaway probe held
   the open pose 45 s) rather than trying to hit a narrow window.
-- **A downloaded USDZ can bind `skel:animationSource` to the wrong prims — but that never broke
-  this app, and the current asset ships unpatched.** Both Sketchfab models carried the defect
-  (`GetAnimQuery()` invalid on the shipped file), and both animated fine in the app, so the SDK
-  plainly does not resolve animations through UsdSkel's inherited binding. Patch a **temp copy**
-  when you need offline skinning measurements; leave the shipped asset alone. Correcting an earlier note here: the defect below is real and was fixed, yet it
+- **A downloaded USDZ can bind `skel:animationSource` to the wrong prims, and the SDK DOES care.
+  Patch it, or the book will never deform.** Both Sketchfab models shipped with the defect —
+  `skel:animationSource` authored on the Mesh prims, which are siblings of the `Skeleton` rather
+  than its ancestors, so UsdSkel resolves no animation source for the skeleton. The fix is to
+  apply `SkelBindingAPI` to the `Skeleton` and point `skel:animationSource` at the animation prim
+  (`Demo` for the current model), then repack with `UsdUtils.CreateNewUsdzPackage`.
+  **The runtime tell is in the SDK's own logcat, not in ours:**
+  ```
+  SPC-…elSkeleton  E  Failed to get skeleton animation source, /scene/…/skin0/skeleton!
+  SPC-…elSkeleton  E  Failed to get animation prim!
+  ```
+  Grep for `Failed to get skeleton animation source` after any model swap. Silence is the pass.
+  **Do not repeat this reasoning error:** an earlier commit here concluded the SDK ignores the
+  binding, because `animated=true` was logged while the binding was still broken. That inference
+  is wrong — `getAnimationResources()` enumerates the clip without needing the binding, but
+  *driving the skeleton* needs it. Acting on that wrong conclusion shipped an unpatched asset and
+  cost a full debugging round: tapping fired correctly, the book simply could not deform, which
+  reads to a user as "the click does nothing". Correcting an earlier note here: the defect below is real and was fixed, yet it
   was never the cause of the symptom. The SDK reported `animated=true` *while the binding was still
   broken*, which proves it does not resolve animations through UsdSkel's inherited
   `skel:animationSource` at all. The repair only makes the file conformant for pxr/`usdrecord` and
