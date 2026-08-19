@@ -45,7 +45,7 @@ or a plain panel just to make something compile.
 | `app/src/main/java/.../data/Answer.kt` | The answer value type. |
 | `app/src/main/java/.../platform/LaunchActivity.kt` | Thin `SpatialLaunchActivity` subclass. The launcher entry point; holds the container meta-data. |
 | `app/src/main/java/.../platform/SpatialApplication.kt` | Application class wiring `mainApp` into the Spatial runtime. |
-| `app/src/main/assets/book.usdz` | The book model (~4 MB, bounding box 0.03 × 0.21 × 0.29 m — already real-world scale, do not rescale). Carries the open/close animation the app plays. |
+| `app/src/main/assets/book.usdz` | The book model (~300 KB, 460 tris, Sketchfab "Book of Mythical Newar", clip `Take_001`). USD units are cm; closed it measures 0.42 × 0.08 × 0.59 m, so `BOOK_SCALE = 0.489` brings it to book size. **This file is patched, not the original download** — see the skel-binding gotcha below. |
 | `app/src/main/assets/answers.txt` | The answer corpus: 1094 entries, longest is 19 characters. `AnswerSource` logs `loaded 1094 answers` — a count of 3 means the asset did not ship. |
 | `app/src/test/java/...` | Unit tests for `AnswerParser`, `AnswerRepository`, `BookState`. Run with `./gradlew testDebugUnitTest`. |
 | `gradle/libs.versions.toml` | Version catalog, including `spatialBom`. |
@@ -117,6 +117,35 @@ the book, swaps the answer **while it is shut**, then reopens it.
   `com.pico.spatial.ui/foundation/6.0.0/…/foundation-6.0.0.aar`:
   `PointerInputScope.detectSpatialPointerEvent(context, target: TargetEntity?, (List<SpatialPointerInfo>) -> Boolean)`
   — same shape as the tap detector, target included, so the SDK filters by entity for you.
+- **A downloaded USDZ can bind `skel:animationSource` to the wrong prims, and nothing warns you.**
+  This model shipped from Sketchfab with `skel:animationSource` authored on the three *Mesh*
+  prims — which are **siblings** of the `Skeleton`, not its ancestors. UsdSkel resolves a
+  skeleton's animation source from itself or an ancestor only, so the skeleton got nothing:
+  joint rotations existed in the file (51 samples, 65→600) but the skinning transforms stayed
+  identity at every frame, and the mesh never deformed. The SDK still enumerated the animation
+  resource, so `animated=true` and playback timed out on nothing. Fixed by applying
+  `SkelBindingAPI` to the `Skeleton` and pointing `skel:animationSource` at `Take_001`, then
+  repacking. **`app/src/main/assets/book.usdz` is therefore a patched file; the untouched
+  download is `~/Downloads/Kiano88_-_Book_of_Mythical_Newar_3D.usdz`, and git history before
+  the fix commit holds the broken copy.** Diagnose any future "animation does nothing" model in
+  two lines of pxr — no device needed:
+  ```python
+  skelq = UsdSkel.Cache().GetSkelQuery(binding.GetSkeleton())
+  print(bool(skelq.GetAnimQuery()))   # False ⇒ the animation is not bound to the skeleton
+  ```
+  Repack with `UsdUtils.CreateNewUsdzPackage` — plain `usdzip <out> scene.usdc` silently drops
+  the texture, and a hand-built `zip` breaks usdz's alignment/no-compression requirement.
+  Two independent confirmations that a repair took: `GetAnimQuery()` turns valid, and
+  `usdrecord` at two frames stops producing byte-identical images.
+- **Measure deformed poses offline, never from `getVisualBounds()`.** That runtime call reflects
+  the entity transform but *not* skeletal deformation, so it cannot tell you where the open book
+  sits. `BookScene`'s `CENTER_CLOSED` / `CENTER_OPEN` and the collider union all come from pxr
+  skinning computed per frame. Measured for this model (metersPerUnit = 0.01):
+  frame 65 closed → size 0.4226 × 0.0840 × 0.5931, centre (0.0027, 0.0441, 0);
+  frames 165–490 open → size 0.9068 × 0.0710 × 0.5931, centre (−0.2394, 0.0372, 0);
+  490 → 600 closes again. x more than doubles, so the open pose is a real two-page spread.
+  `ComputeSkinnedPoints` returns `True` even when the skinning transforms are all identity —
+  check the transforms, not the return value.
 - **A collider much larger than its object can be worse than a tight one.** The book's collider
   must cover both the closed and open poses, because `CollisionComponent` follows the entity
   transform but *not* skeletal deformation — so it is the union of the two measured bounding
@@ -209,9 +238,16 @@ pico-cli shell "logcat -d -v brief -s AnswerSource:V BookScene:V BookAnimator:V 
 ```
 
 Healthy startup is exactly two lines: `AnswerSource: loaded 1094 answers` and
-`BookScene: book loaded, bounds=..., center=..., animated=true`. `animated=false` means the
+`BookScene: book loaded, animated=true, tapBox=..., center=...`. `animated=false` means the
 animation fell back to still mode. Any `BookAnimator` line at all is a problem — the tag only
 ever logs segment timeouts, so **silence is the pass condition**.
+
+**`animated=true` does not prove the book will actually move.** It only says the SDK found an
+animation resource. A model can ship a `SkelAnimation` that no skeleton is bound to; playback
+then advances time and reports no timeout while the mesh never deforms. That exact failure
+shipped here once — see the skel-binding gotcha. The only cheap proof is the offline check in
+that entry; on-screen, the tell was the book sliding sideways without opening (the sideways
+slide is `BookScene`'s centre compensation doing its job for a deformation that never came).
 
 Clear logcat before *every* launch. A stale line from the previous run reads as current and
 has already produced one wrong conclusion in this project.
