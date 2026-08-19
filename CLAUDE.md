@@ -13,7 +13,7 @@ It opens a single **volumetric** `DefaultWindowContainer` (a 3D volume, not a fl
 and renders a SpatialUI scene inside it.
 
 - Project name: `BookOfAnswers`
-- Package: `com.illusion.bookofanswers`
+- Package: `tech.illusion.bookofanswers`
 - Template: `volumetric`, template version `6.0`
 - Spatial SDK BOM: `6.0.0` (`gradle/libs.versions.toml` → `spatialBom`)
 - compileSdk / targetSdk / minSdk: 35
@@ -150,7 +150,7 @@ export PICO_HOME="$HOME/Library/pico/sdk"
 
 ./gradlew assembleDebug
 pico-cli app install app/build/outputs/apk/debug/app-debug.apk
-pico-cli app launch com.illusion.bookofanswers --activity .platform.LaunchActivity
+pico-cli app launch tech.illusion.bookofanswers --activity .platform.LaunchActivity
 ```
 
 Emulator with auto-reconnect (restarts if the process dies or adb drops):
@@ -204,7 +204,7 @@ on first 6.0 start. The older `PICO_0.13` AVD is still installed as a fallback b
 ./gradlew assembleDebug && ./gradlew testDebugUnitTest
 pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device emulator-5554
 pico-cli shell "logcat -c" --device emulator-5554          # ALWAYS clear first
-pico-cli app launch com.illusion.bookofanswers --activity .platform.LaunchActivity --device emulator-5554
+pico-cli app launch tech.illusion.bookofanswers --activity .platform.LaunchActivity --device emulator-5554
 pico-cli shell "logcat -d -v brief -s AnswerSource:V BookScene:V BookAnimator:V HomeVolume:V" --device emulator-5554
 ```
 

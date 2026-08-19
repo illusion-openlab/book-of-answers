@@ -1,4 +1,4 @@
-package com.illusion.bookofanswers.data
+package tech.illusion.bookofanswers.data
 
 import kotlin.random.Random
 

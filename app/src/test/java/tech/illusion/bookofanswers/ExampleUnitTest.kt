@@ -1,4 +1,4 @@
-package com.illusion.bookofanswers
+package tech.illusion.bookofanswers
 
 import org.junit.Test
 

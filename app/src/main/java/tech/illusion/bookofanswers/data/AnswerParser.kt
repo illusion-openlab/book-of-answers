@@ -1,4 +1,4 @@
-package com.illusion.bookofanswers.data
+package tech.illusion.bookofanswers.data
 
 /**
  * 把 `assets/answers.txt` 的原始文本解析成答案列表。

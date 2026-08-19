@@ -1,7 +1,7 @@
 # 答案之书 — 设计文档
 
 日期：2026-08-17
-项目：BookOfAnswers（`com.illusion.bookofanswers`）
+项目：BookOfAnswers（`tech.illusion.bookofanswers`）
 平台：PICO OS 6 / Spatial SDK BOM 6.0.0，volumetric WindowContainer
 
 ## 1. 目标

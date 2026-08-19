@@ -1,4 +1,4 @@
-package com.illusion.bookofanswers.platform
+package tech.illusion.bookofanswers.platform
 
 import com.pico.spatial.ui.platform.stub.SpatialLaunchActivity
 

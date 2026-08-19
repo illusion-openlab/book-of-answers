@@ -1,8 +1,8 @@
-package com.illusion.bookofanswers.platform
+package tech.illusion.bookofanswers.platform
 
 import android.app.Application
 import com.pico.spatial.ui.foundation.dsl.launch
-import com.illusion.bookofanswers.mainApp
+import tech.illusion.bookofanswers.mainApp
 
 class SpatialApplication : Application() {
     override fun onCreate() {

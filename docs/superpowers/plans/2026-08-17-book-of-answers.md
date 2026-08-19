@@ -21,7 +21,7 @@
   export PICO_HOME="$HOME/Library/pico/sdk"
   ```
 - **不得发明 API**。本计划中出现的每个 Spatial SDK 符号都已在 `~/Library/pico/sdk/6.0/agent-vault/spatial/api-reference/` 中核实。若编译报某符号不存在，去该目录 grep 确认真实签名，不要臆测替换。
-- **包名**：`com.illusion.bookofanswers`
+- **包名**：`tech.illusion.bookofanswers`
 - **待机文案**（逐字，不得改写）：主句「心中默念你的问题」，副句「然后触碰这本书」。用「触碰」不用「点击」；不用「揭晓」。
 - **动画时间轴**（fps = 120，实测）：合着 frame 5、开书 frame 100→200、摊开 frame 250、合书 frame 300→400。
 - **不得谎报验证**。截图没看到就说没看到；真机手指 `Poke` 在最后一个 Task 之前一律标注为 pending。
@@ -103,9 +103,9 @@ Expected: 显示一条提交；未跟踪文件数为 0（或仅剩 `artifacts/`�
 
 **Files:**
 - Create: `app/src/main/assets/answers.txt`
-- Create: `app/src/main/java/com/illusion/bookofanswers/data/Answer.kt`
-- Create: `app/src/main/java/com/illusion/bookofanswers/data/AnswerParser.kt`
-- Test: `app/src/test/java/com/illusion/bookofanswers/data/AnswerParserTest.kt`
+- Create: `app/src/main/java/tech/illusion/bookofanswers/data/Answer.kt`
+- Create: `app/src/main/java/tech/illusion/bookofanswers/data/AnswerParser.kt`
+- Test: `app/src/test/java/tech/illusion/bookofanswers/data/AnswerParserTest.kt`
 
 **Interfaces:**
 - Consumes: 无
@@ -151,10 +151,10 @@ Expected: 行数 1094；前几行是中文答案；无 `TOO LONG` 输出。
 
 - [ ] **Step 3: 写失败的测试**
 
-Create `app/src/test/java/com/illusion/bookofanswers/data/AnswerParserTest.kt`:
+Create `app/src/test/java/tech/illusion/bookofanswers/data/AnswerParserTest.kt`:
 
 ```kotlin
-package com.illusion.bookofanswers.data
+package tech.illusion.bookofanswers.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -207,10 +207,10 @@ Expected: 编译失败，`Unresolved reference: AnswerParser`（以及 `Answer`�
 
 - [ ] **Step 5: 写最小实现**
 
-Create `app/src/main/java/com/illusion/bookofanswers/data/Answer.kt`:
+Create `app/src/main/java/tech/illusion/bookofanswers/data/Answer.kt`:
 
 ```kotlin
-package com.illusion.bookofanswers.data
+package tech.illusion.bookofanswers.data
 
 /**
  * 一条答案。
@@ -220,10 +220,10 @@ package com.illusion.bookofanswers.data
 data class Answer(val text: String)
 ```
 
-Create `app/src/main/java/com/illusion/bookofanswers/data/AnswerParser.kt`:
+Create `app/src/main/java/tech/illusion/bookofanswers/data/AnswerParser.kt`:
 
 ```kotlin
-package com.illusion.bookofanswers.data
+package tech.illusion.bookofanswers.data
 
 /**
  * 把 `assets/answers.txt` 的原始文本解析成答案列表。
@@ -254,9 +254,9 @@ Expected: `BUILD SUCCESSFUL`，5 个测试全部通过。
 
 ```bash
 git add app/src/main/assets/answers.txt \
-        app/src/main/java/com/illusion/bookofanswers/data/Answer.kt \
-        app/src/main/java/com/illusion/bookofanswers/data/AnswerParser.kt \
-        app/src/test/java/com/illusion/bookofanswers/data/AnswerParserTest.kt
+        app/src/main/java/tech/illusion/bookofanswers/data/Answer.kt \
+        app/src/main/java/tech/illusion/bookofanswers/data/AnswerParser.kt \
+        app/src/test/java/tech/illusion/bookofanswers/data/AnswerParserTest.kt
 git commit -m "feat: add answer corpus and parser
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
@@ -267,8 +267,8 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ## Task 3: AnswerRepository — 随机抽取与防重复
 
 **Files:**
-- Create: `app/src/main/java/com/illusion/bookofanswers/data/AnswerRepository.kt`
-- Test: `app/src/test/java/com/illusion/bookofanswers/data/AnswerRepositoryTest.kt`
+- Create: `app/src/main/java/tech/illusion/bookofanswers/data/AnswerRepository.kt`
+- Test: `app/src/test/java/tech/illusion/bookofanswers/data/AnswerRepositoryTest.kt`
 
 **Interfaces:**
 - Consumes: `Answer`（Task 2）
@@ -280,10 +280,10 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: 写失败的测试**
 
-Create `app/src/test/java/com/illusion/bookofanswers/data/AnswerRepositoryTest.kt`:
+Create `app/src/test/java/tech/illusion/bookofanswers/data/AnswerRepositoryTest.kt`:
 
 ```kotlin
-package com.illusion.bookofanswers.data
+package tech.illusion.bookofanswers.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -353,10 +353,10 @@ Expected: 编译失败，`Unresolved reference: AnswerRepository`。
 
 - [ ] **Step 3: 写最小实现**
 
-Create `app/src/main/java/com/illusion/bookofanswers/data/AnswerRepository.kt`:
+Create `app/src/main/java/tech/illusion/bookofanswers/data/AnswerRepository.kt`:
 
 ```kotlin
-package com.illusion.bookofanswers.data
+package tech.illusion.bookofanswers.data
 
 import kotlin.random.Random
 
@@ -413,8 +413,8 @@ Expected: `BUILD SUCCESSFUL`，6 个测试通过。若某个测试**挂住不返
 - [ ] **Step 5: 提交**
 
 ```bash
-git add app/src/main/java/com/illusion/bookofanswers/data/AnswerRepository.kt \
-        app/src/test/java/com/illusion/bookofanswers/data/AnswerRepositoryTest.kt
+git add app/src/main/java/tech/illusion/bookofanswers/data/AnswerRepository.kt \
+        app/src/test/java/tech/illusion/bookofanswers/data/AnswerRepositoryTest.kt
 git commit -m "feat: add answer repository with recent-window dedup
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
@@ -425,7 +425,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ## Task 4: AnswerSource — 从 assets 装载与兜底
 
 **Files:**
-- Create: `app/src/main/java/com/illusion/bookofanswers/data/AnswerSource.kt`
+- Create: `app/src/main/java/tech/illusion/bookofanswers/data/AnswerSource.kt`
 
 **Interfaces:**
 - Consumes: `Answer`、`AnswerParser`（Task 2）、`AnswerRepository`（Task 3）
@@ -435,10 +435,10 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: 写实现**
 
-Create `app/src/main/java/com/illusion/bookofanswers/data/AnswerSource.kt`:
+Create `app/src/main/java/tech/illusion/bookofanswers/data/AnswerSource.kt`:
 
 ```kotlin
-package com.illusion.bookofanswers.data
+package tech.illusion.bookofanswers.data
 
 import android.content.Context
 import android.util.Log
@@ -487,7 +487,7 @@ Expected: `BUILD SUCCESSFUL`
 - [ ] **Step 3: 提交**
 
 ```bash
-git add app/src/main/java/com/illusion/bookofanswers/data/AnswerSource.kt
+git add app/src/main/java/tech/illusion/bookofanswers/data/AnswerSource.kt
 git commit -m "feat: load answers from assets with fallback
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
@@ -498,8 +498,8 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ## Task 5: BookState — 状态机
 
 **Files:**
-- Create: `app/src/main/java/com/illusion/bookofanswers/content/BookState.kt`
-- Test: `app/src/test/java/com/illusion/bookofanswers/content/BookStateTest.kt`
+- Create: `app/src/main/java/tech/illusion/bookofanswers/content/BookState.kt`
+- Test: `app/src/test/java/tech/illusion/bookofanswers/content/BookStateTest.kt`
 
 **Interfaces:**
 - Consumes: 无（动画与抽答案全部以回调注入，因此可脱离 SDK 单测）
@@ -511,10 +511,10 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: 写失败的测试**
 
-Create `app/src/test/java/com/illusion/bookofanswers/content/BookStateTest.kt`:
+Create `app/src/test/java/tech/illusion/bookofanswers/content/BookStateTest.kt`:
 
 ```kotlin
-package com.illusion.bookofanswers.content
+package tech.illusion.bookofanswers.content
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -632,10 +632,10 @@ Expected: 编译失败，`Unresolved reference: BookState`。
 
 - [ ] **Step 3: 写最小实现**
 
-Create `app/src/main/java/com/illusion/bookofanswers/content/BookState.kt`:
+Create `app/src/main/java/tech/illusion/bookofanswers/content/BookState.kt`:
 
 ```kotlin
-package com.illusion.bookofanswers.content
+package tech.illusion.bookofanswers.content
 
 enum class BookPhase { Closed, Opening, Revealed, Reshuffling }
 
@@ -695,8 +695,8 @@ Expected: `BUILD SUCCESSFUL`，7 个测试通过。
 - [ ] **Step 5: 提交**
 
 ```bash
-git add app/src/main/java/com/illusion/bookofanswers/content/BookState.kt \
-        app/src/test/java/com/illusion/bookofanswers/content/BookStateTest.kt
+git add app/src/main/java/tech/illusion/bookofanswers/content/BookState.kt \
+        app/src/test/java/tech/illusion/bookofanswers/content/BookStateTest.kt
 git commit -m "feat: add book interaction state machine
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
@@ -707,7 +707,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ## Task 6: BookAnimator — 内置动画的区间播放
 
 **Files:**
-- Create: `app/src/main/java/com/illusion/bookofanswers/content/BookAnimator.kt`
+- Create: `app/src/main/java/tech/illusion/bookofanswers/content/BookAnimator.kt`
 
 **Interfaces:**
 - Consumes: `AnimationPlaybackController`（由 Task 7 的 `BookScene` 提供）
@@ -724,10 +724,10 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: 写实现**
 
-Create `app/src/main/java/com/illusion/bookofanswers/content/BookAnimator.kt`:
+Create `app/src/main/java/tech/illusion/bookofanswers/content/BookAnimator.kt`:
 
 ```kotlin
-package com.illusion.bookofanswers.content
+package tech.illusion.bookofanswers.content
 
 import android.util.Log
 import com.pico.spatial.core.ecs.animation.AnimationPlaybackController
@@ -841,7 +841,7 @@ Expected: `BUILD SUCCESSFUL`。
 - [ ] **Step 4: 提交**
 
 ```bash
-git add app/src/main/java/com/illusion/bookofanswers/content/BookAnimator.kt
+git add app/src/main/java/tech/illusion/bookofanswers/content/BookAnimator.kt
 git add gradle/libs.versions.toml app/build.gradle.kts 2>/dev/null || true
 git commit -m "feat: add segment-based book animation controller
 
@@ -853,7 +853,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ## Task 7: BookScene — 3D 装配
 
 **Files:**
-- Create: `app/src/main/java/com/illusion/bookofanswers/content/BookScene.kt`
+- Create: `app/src/main/java/tech/illusion/bookofanswers/content/BookScene.kt`
 
 **Interfaces:**
 - Consumes: `BookAnimator`（Task 6）
@@ -865,10 +865,10 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: 写实现**
 
-Create `app/src/main/java/com/illusion/bookofanswers/content/BookScene.kt`:
+Create `app/src/main/java/tech/illusion/bookofanswers/content/BookScene.kt`:
 
 ```kotlin
-package com.illusion.bookofanswers.content
+package tech.illusion.bookofanswers.content
 
 import android.util.Log
 import com.pico.spatial.core.ecs.CollisionComponent
@@ -965,7 +965,7 @@ Expected: `BUILD SUCCESSFUL`
 - [ ] **Step 3: 提交**
 
 ```bash
-git add app/src/main/java/com/illusion/bookofanswers/content/BookScene.kt
+git add app/src/main/java/tech/illusion/bookofanswers/content/BookScene.kt
 git commit -m "feat: add book scene assembly with collision and interaction
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
@@ -976,7 +976,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ## Task 8: AnswerPanel — SpatialUI 面板
 
 **Files:**
-- Create: `app/src/main/java/com/illusion/bookofanswers/content/AnswerPanel.kt`
+- Create: `app/src/main/java/tech/illusion/bookofanswers/content/AnswerPanel.kt`
 
 **Interfaces:**
 - Consumes: 无
@@ -986,10 +986,10 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: 写实现**
 
-Create `app/src/main/java/com/illusion/bookofanswers/content/AnswerPanel.kt`:
+Create `app/src/main/java/tech/illusion/bookofanswers/content/AnswerPanel.kt`:
 
 ```kotlin
-package com.illusion.bookofanswers.content
+package tech.illusion.bookofanswers.content
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -1096,7 +1096,7 @@ Expected: `clean`
 - [ ] **Step 4: 提交**
 
 ```bash
-git add app/src/main/java/com/illusion/bookofanswers/content/AnswerPanel.kt
+git add app/src/main/java/tech/illusion/bookofanswers/content/AnswerPanel.kt
 git commit -m "feat: add answer panel with prompt and answer states
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
@@ -1107,7 +1107,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ## Task 9: HomeVolume 组装、接线与设备验证
 
 **Files:**
-- Modify: `app/src/main/java/com/illusion/bookofanswers/content/HomeVolume.kt`（当前是标了 `⚠️ THROWAWAY SPIKE` 的验证代码，**整个替换**）
+- Modify: `app/src/main/java/tech/illusion/bookofanswers/content/HomeVolume.kt`（当前是标了 `⚠️ THROWAWAY SPIKE` 的验证代码，**整个替换**）
 
 **Interfaces:**
 - Consumes: `AnswerSource`（Task 4）、`BookState` / `BookPhase`（Task 5）、`loadBookScene` / `BookScene`（Task 7）、`AnswerPanel` / `PanelContent`（Task 8）
@@ -1116,7 +1116,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - [ ] **Step 1: 整体替换 HomeVolume.kt**
 
 ```kotlin
-package com.illusion.bookofanswers.content
+package tech.illusion.bookofanswers.content
 
 import android.util.Log
 import androidx.compose.runtime.Composable
@@ -1129,7 +1129,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import com.illusion.bookofanswers.data.AnswerSource
+import tech.illusion.bookofanswers.data.AnswerSource
 import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.math.Vector3
 import com.pico.spatial.ui.foundation.content.SpatialView
@@ -1239,7 +1239,7 @@ Expected: `BUILD SUCCESSFUL`，Task 2/3/5 的全部测试通过。
 adb devices
 pico-cli app install app/build/outputs/apk/debug/app-debug.apk
 pico-cli shell "logcat -c"
-pico-cli app launch com.illusion.bookofanswers --activity .platform.LaunchActivity
+pico-cli app launch tech.illusion.bookofanswers --activity .platform.LaunchActivity
 ```
 
 若 `adb devices` 无设备：`pico-cli emulator start --watch --watch-interval 5 --wait-timeout 300 -y`
@@ -1286,8 +1286,8 @@ Expected:
 - [ ] **Step 8: 提交**
 
 ```bash
-git add app/src/main/java/com/illusion/bookofanswers/content/HomeVolume.kt \
-        app/src/main/java/com/illusion/bookofanswers/content/BookScene.kt
+git add app/src/main/java/tech/illusion/bookofanswers/content/HomeVolume.kt \
+        app/src/main/java/tech/illusion/bookofanswers/content/BookScene.kt
 git commit -m "feat: wire up book interaction end to end
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
@@ -1320,7 +1320,7 @@ pico-cli device list --format json
 
 ```bash
 pico-cli app install app/build/outputs/apk/debug/app-debug.apk --device <真机ID>
-pico-cli app launch com.illusion.bookofanswers --activity .platform.LaunchActivity --device <真机ID>
+pico-cli app launch tech.illusion.bookofanswers --activity .platform.LaunchActivity --device <真机ID>
 ```
 
 - [ ] **Step 3: 用手指戳书，确认 Poke 生效**

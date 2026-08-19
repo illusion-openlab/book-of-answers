@@ -1,6 +1,6 @@
-package com.illusion.bookofanswers
+package tech.illusion.bookofanswers
 
-import com.illusion.bookofanswers.content.HomeVolume
+import tech.illusion.bookofanswers.content.HomeVolume
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.foundation.dsl.DefaultWindowContainer
 import com.pico.spatial.ui.foundation.dsl.SpatialAppScope

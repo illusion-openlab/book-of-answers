@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.illusion.bookofanswers"
+    namespace = "tech.illusion.bookofanswers"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.illusion.bookofanswers"
+        applicationId = "tech.illusion.bookofanswers"
         minSdk = 35
         targetSdk = 35
         versionCode = 1

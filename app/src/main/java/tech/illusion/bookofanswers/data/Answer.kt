@@ -1,4 +1,4 @@
-package com.illusion.bookofanswers.data
+package tech.illusion.bookofanswers.data
 
 /**
  * 一条答案。

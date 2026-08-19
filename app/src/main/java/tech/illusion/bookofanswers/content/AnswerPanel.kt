@@ -1,4 +1,4 @@
-package com.illusion.bookofanswers.content
+package tech.illusion.bookofanswers.content
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box

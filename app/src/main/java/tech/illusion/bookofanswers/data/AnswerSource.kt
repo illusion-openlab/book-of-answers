@@ -1,4 +1,4 @@
-package com.illusion.bookofanswers.data
+package tech.illusion.bookofanswers.data
 
 import android.content.Context
 import android.util.Log

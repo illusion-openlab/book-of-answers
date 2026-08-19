@@ -1,4 +1,4 @@
-package com.illusion.bookofanswers.content
+package tech.illusion.bookofanswers.content
 
 import android.util.Log
 import com.pico.spatial.core.ecs.CollisionComponent

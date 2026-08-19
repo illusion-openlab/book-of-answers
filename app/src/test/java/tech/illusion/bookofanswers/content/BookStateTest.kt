@@ -1,4 +1,4 @@
-package com.illusion.bookofanswers.content
+package tech.illusion.bookofanswers.content
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

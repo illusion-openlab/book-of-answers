@@ -1,4 +1,4 @@
-package com.illusion.bookofanswers.content
+package tech.illusion.bookofanswers.content
 
 enum class BookPhase { Closed, Opening, Open, Closing }
 
