@@ -35,3 +35,7 @@ google-services.json
 
 # Screenshot / verification artifacts (not source of truth)
 artifacts/
+
+# Python bytecode
+__pycache__/
+*.pyc

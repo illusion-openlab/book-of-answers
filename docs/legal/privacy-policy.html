@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>答案之书 隐私政策</title>
+<style>
+  :root {
+    --ink:#1c2333; --muted:#5b6478; --line:#e3e7ef;
+    --accent:#33415c; --bg:#ffffff; --card:#f6f8fc; --note:#fff8e6; --noteline:#e8d9a8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink:#e8ecf4; --muted:#a3adc2; --line:#2b3346;
+      --accent:#9db4e0; --bg:#141824; --card:#1c2231; --note:#2a2519; --noteline:#4a4128;
+    }
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; padding:40px 20px 80px; background:var(--bg); color:var(--ink);
+    font:16px/1.85 -apple-system, BlinkMacSystemFont, "PingFang SC",
+         "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  main { max-width:740px; margin:0 auto; }
+  h1 { font-size:27px; line-height:1.45; margin:0 0 18px; }
+  h2 { font-size:19px; margin:46px 0 14px; padding-top:22px; border-top:1px solid var(--line); }
+  h3 { font-size:16px; margin:28px 0 10px; color:var(--accent); }
+  .meta { color:var(--muted); font-size:14px; line-height:2; margin-bottom:28px; }
+  .lead { background:var(--card); border-radius:12px; padding:20px 24px; margin:0 0 8px; }
+  .lead strong { font-size:17px; }
+  .note {
+    background:var(--note); border:1px solid var(--noteline);
+    border-radius:10px; padding:16px 20px; margin:22px 0; font-size:15px;
+  }
+  p { margin:14px 0; }
+  ul { padding-left:22px; } li { margin:7px 0; }
+  table { border-collapse:collapse; width:100%; margin:18px 0; font-size:15px; }
+  th, td { border:1px solid var(--line); padding:10px 14px; text-align:left; }
+  th { background:var(--card); font-weight:600; }
+  code {
+    background:var(--card); padding:2px 6px; border-radius:5px; font-size:14px;
+    font-family:ui-monospace, SFMono-Regular, Menlo, monospace; word-break:break-all;
+  }
+  pre { background:var(--card); padding:14px 16px; border-radius:10px; overflow-x:auto; font-size:14px; }
+  pre code { background:none; padding:0; }
+  a { color:var(--accent); }
+  footer { margin-top:56px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>答案之书 隐私政策</h1>
+
+<p>本隐私政策是深圳市科斯莫西科技有限公司（以下简称“我们”）就为了向您提供「答案之书」
+及相关服务（以下统称“本服务”）而处理您的个人信息所制定。希望您在使用本服务前仔细阅读
+并理解本隐私政策，以便做出适当的选择。</p>
+
+<div class="meta">
+<strong>应用名称</strong>：答案之书<br>
+<strong>包名</strong>：<code>tech.illusion.bookofanswers</code><br>
+<strong>生效日期</strong>：2026-08-20 ｜ <strong>最近更新</strong>：2026-08-20
+</div>
+
+<div class="lead">
+<p><strong>开宗明义：本应用不收集、不存储、不上传您的任何个人信息。</strong></p>
+<p>它没有网络权限，在技术上无法联网；也不在您的设备上写入任何文件。
+下文第一节与第二节给出了您可以自行核验这一点的具体方法。</p>
+</div>
+
+<h2>一、我们收集的个人信息</h2>
+
+<p><strong>我们不收集任何个人信息。</strong></p>
+
+<p>具体而言，本应用不收集以下任何一类信息：</p>
+
+<ul>
+<li>个人身份信息（姓名、手机号、电子邮箱、身份证件号码等）</li>
+<li>设备标识信息（IMEI、Android ID、OAID、MAC 地址、序列号等）</li>
+<li>位置信息（精确或模糊）</li>
+<li>使用行为信息（点击记录、抽取过的答案、停留时长、崩溃日志等）</li>
+<li>头显相关信息（房间空间结构、手部姿态、眼动、面部数据等）</li>
+<li>通讯录、短信、通话记录、相册等设备内容</li>
+<li>本应用不使用 Cookie 或任何同类追踪技术</li>
+</ul>
+
+<h3>您可以如何自行核验</h3>
+
+<p>以下每一条都不需要您相信我们的陈述，均可独立验证。</p>
+
+<p><strong>1. 应用没有网络权限，因此在技术上无法发起任何网络请求。</strong></p>
+
+<p><code>AndroidManifest.xml</code> 中未声明任何权限，其中包括
+<code>android.permission.INTERNET</code>。Android 系统会阻止未申请该权限的应用访问网络。
+您可以这样核实：</p>
+
+<pre><code>aapt2 dump badging book-of-answers.apk | grep uses-permission</code></pre>
+
+<p>源代码中也不存在任何网络调用（<code>http</code> / <code>OkHttp</code> /
+<code>Retrofit</code> / <code>Socket</code> / <code>WebView</code> 等）。</p>
+
+<p><strong>2. 应用不向您的设备写入任何数据。</strong></p>
+
+<p>源代码中不存在 <code>SharedPreferences</code>、文件写入、数据库或 DataStore 的任何调用。
+您抽到过哪些答案只存在于当次运行的内存中，关闭应用即消失，每次打开都是全新状态。</p>
+
+<p><strong>3. 应用未集成任何第三方 SDK。</strong></p>
+
+<p>依赖仅有 AndroidX 基础库与 PICO Spatial SDK（渲染与空间交互所必需）。
+不含统计分析、广告、崩溃上报、推送等任何会收集信息的组件。</p>
+
+<p><strong>4. 全部源代码公开。</strong></p>
+
+<p>源代码托管于
+<a href="https://github.com/illusion-openlab/book-of-answers">GitHub</a>，
+您可以逐行查阅，也可以自行构建并与发布版本对比。</p>
+
+<h2>二、权限情况</h2>
+
+<p><strong>本应用未申请任何设备权限。</strong></p>
+
+<table>
+<thead><tr><th>权限名称</th><th>权限功能说明</th><th>使用场景或目的</th></tr></thead>
+<tbody><tr><td>无</td><td>本应用未申请任何需要您授权的设备权限</td><td>不适用</td></tr></tbody>
+</table>
+
+<p>您在安装和使用本应用的过程中，不会收到任何权限授权弹窗。</p>
+
+<div class="note">
+<p><strong>关于一条自动生成的内部权限的说明</strong></p>
+<p>使用 <code>aapt2</code> 检视安装包时，您会看到一条
+<code>tech.illusion.bookofanswers.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION</code>。
+这是 Android 构建工具为应用<strong>自身组件间通信</strong>自动添加的内部权限，属于系统机制，
+与网络、存储、位置、摄像头、麦克风等均无关，不会向您申请授权，
+也不会使本应用获得任何访问您信息的能力。</p>
+</div>
+
+<h2>三、个人信息的使用</h2>
+
+<p>由于我们不收集任何个人信息，<strong>不存在对您个人信息的任何使用行为</strong>。</p>
+
+<p>我们不会将任何信息用于用户画像、个性化推荐、定向广告或算法决策。
+应用给出的答案是从随包分发的固定文案中随机抽取的，<strong>不依据您的任何信息进行推断或匹配</strong>。</p>
+
+<p>如本应用未来的版本发生功能变化，导致确有必要收集个人信息，我们将在该变更<strong>生效前</strong>
+更新本政策，通过应用商店的版本更新说明告知您，并在应用内以显著方式征得您的同意。</p>
+
+<h2>四、共享和公开披露个人信息</h2>
+
+<p>我们承诺，不会主动共享或转让您的个人信息至任何第三方。由于我们不掌握任何个人信息，
+实际上也不存在可供共享或转让的对象。</p>
+
+<p><strong>本应用未接入任何第三方提供的开发者工具包（SDK）。</strong>
+因此不存在任何第三方通过本应用收集您信息的情形。</p>
+
+<p>我们承诺，不会对外公开披露您的个人信息。</p>
+
+<h2>五、个人信息的存储</h2>
+
+<p><strong>本应用不收集、不存储任何个人信息，因此不存在个人信息的存储地点与存储期限问题。</strong></p>
+
+<p>为免歧义，另作如下说明：</p>
+
+<ul>
+<li>本应用的全部功能均在您的头显设备<strong>本地</strong>完成，不涉及任何服务器。</li>
+<li>我们在中华人民共和国境内运营，且不存在任何个人信息的跨境传输。</li>
+<li>应用内的答案文案与书本模型随安装包一同分发，存放于应用自身的安装目录内，
+属于应用的只读资源，不含任何用户信息。</li>
+<li>卸载本应用即可移除其在您设备上的一切存在，不会有残留数据。</li>
+</ul>
+
+<h2>六、您的权益</h2>
+
+<p>依据《中华人民共和国个人信息保护法》等法律法规，您享有对个人信息的查阅、复制、更正、
+补充、删除，以及改变或撤回授权范围、注销账号等权利。</p>
+
+<p><strong>本应用不收集任何个人信息，也不设账号体系</strong>，因此在本应用中不存在可供查阅、
+复制、更正、补充或删除的个人信息，也不存在需要注销的账号。</p>
+
+<p>如您希望核实这一情况，或希望我们协助您确认本应用未持有您的任何信息，可通过以下方式
+与我们联系：</p>
+
+<ul>
+<li><strong>电子邮箱</strong>：<a href="mailto:hello@story.app">hello@story.app</a></li>
+</ul>
+
+<p>我们将在收到您的请求之日起 <strong>15 个工作日</strong>内予以回复。</p>
+
+<h2>七、投诉与反馈</h2>
+
+<p>若您对我们遵守本隐私政策有任何意见，或您认为您的个人信息权利可能受到侵害，或者发现
+侵害个人信息权利的线索，或有其他的投诉建议，或关于未成年人个人信息保护相关或其他
+个人信息保护的问题，您可以通过以下方式与我们联系：</p>
+
+<ul>
+<li><strong>公司名称</strong>：深圳市科斯莫西科技有限公司</li>
+<li><strong>电子邮箱</strong>：<a href="mailto:hello@story.app">hello@story.app</a></li>
+</ul>
+
+<p>我们将在收到您的报告或投诉之日起 <strong>15 个工作日</strong>内予以回复。</p>
+
+<h2>八、其他</h2>
+
+<h3>关于未成年人</h3>
+
+<p>本应用不面向特定年龄群体，内容为固定的中文短句文案。由于本应用不收集任何信息，
+不涉及对未成年人个人信息的处理。</p>
+
+<h3>关于应用内的答案内容</h3>
+
+<p>应用内共 1,094 条答案文案，<strong>全部随安装包一同分发</strong>，并非从网络获取，
+也不会更新或联网拉取。</p>
+
+<p>答案由随机抽取给出，仅作趣味与自我思考的引子，<strong>不构成任何医疗、法律、金融、
+心理或其他专业建议</strong>，也不具备预测能力。请勿据此作出重要决定。</p>
+
+<p>文案整理自开源项目
+<a href="https://github.com/zhang-brook/answerbook">zhang-brook/answerbook</a>，
+为中文互联网上流传多年的民间汇编短句，不涉及任何用户个人信息。
+素材来源与授权的完整说明见仓库
+<a href="https://github.com/illusion-openlab/book-of-answers#素材来源与授权">README</a>。</p>
+
+<h3>本政策的更新</h3>
+
+<p>若本应用的行为发生变化，我们会在变更<strong>生效前</strong>更新本政策，并同步更新页首的
+「最近更新」日期。本政策的全部历史版本可通过本仓库的提交记录完整追溯。</p>
+
+<footer>
+本页源文件位于
+<a href="https://github.com/illusion-openlab/book-of-answers/blob/main/docs/legal/privacy-policy.md"><code>docs/legal/privacy-policy.md</code></a>，
+其与应用实际行为的一致性可通过公开源代码逐条核对。
+</footer>
+
+</main>
+</body>
+</html>
