@@ -4,8 +4,8 @@
 用法（仓库根目录）：  python3 art/build-icons.py
 依赖：pillow、numpy、opencv-python
 
-构图刻意保持最简：**一层纯色背景 + 一层源图抠图**，不加渐变、不加光效。
-背景色是唯一可调项（[BG]）。规范与 SDF 规则的依据见 art/README.md。生成物不要手改。
+构图：**一层背景底图 + 一层书本抠图**，两张都是提供的素材，脚本不做任何色彩加工。
+规范与 SDF 规则的依据见 art/README.md。生成物不要手改。
 """
 from pathlib import Path
 
@@ -14,20 +14,17 @@ import numpy as np
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "art" / "icon-source-book.png"
+SRC_BOOK = ROOT / "art" / "icon-source-book.png"
+SRC_BG = ROOT / "art" / "icon-source-bg.png"
 RES = ROOT / "app" / "src" / "main" / "res"
 
 N = 1024          # 3D 图标层与平面 launcher 的画布
 M = 1424          # adaptive icon 前景的画布（沿用脚手架尺寸）
 SDF_RANGE = 31.0  # 实测：SDF 是内部距离场，31px 处线性截断
 
-# 纯色背景，照抄宣传图里设计师做好的那块图标瓦片：书本以外的角落实测 RGB(7,6,11)。
-#
-# **这是明知代价的选择，不要"顺手修正"回提亮版。** 规范建议背景层避免纯黑/深黑，理由是
-# 系统自动生成的分层悬停高光/阴影需要亮度可依附 —— 近黑底下那个效果会很弱甚至看不出来。
-# 但它只影响观感，不是过审红线（红线只有「背景层不能透明」「主体层不能全透明」两条）。
-# 已确认按设计稿优先。
-BG = np.array([7, 6, 11], np.uint8)
+# 背景来自 SRC_BG（1536² 不透明的星盘底图），整幅等比缩放到目标画布，不裁剪、不调色。
+# 亮度中位约 23：偏暗但不是纯黑，系统自动生成的分层悬停高光/阴影仍有可依附的亮度。
+# 金环落在归一化半径 0.70–0.92 的外环带，会在书本四边露出、被书的四角压住。
 
 # 书本撑满，照设计稿观感：半对角约占内切圆半径 97%。
 BOOK_H_1024 = 754    # 1024 画布，半对角 497 / 半径 512
@@ -35,8 +32,8 @@ BOOK_H_1424 = 700    # 1424 画布，半对角 461 / adaptive 安全区半径 47
 
 
 def load_book() -> Image.Image:
-    """读源图并按高 alpha 阈值裁到紧包围盒（低阈值会被边缘抗锯齿撑大）。"""
-    im = Image.open(SRC).convert("RGBA")
+    """读书本源图并按高 alpha 阈值裁到紧包围盒（低阈值会被边缘抗锯齿撑大）。"""
+    im = Image.open(SRC_BOOK).convert("RGBA")
     ys, xs = np.where(np.array(im)[..., 3] > 128)
     return im.crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
 
@@ -60,9 +57,11 @@ def circle_alpha(canvas: int) -> np.ndarray:
     return np.clip((canvas / 2.0 - r) + 0.5, 0, 1) * 255.0
 
 
-def solid(canvas: int, alpha: np.ndarray) -> np.ndarray:
-    """纯色 RGB + 给定 alpha。"""
-    rgb = np.broadcast_to(BG, (canvas, canvas, 3)).astype(np.float32)
+def background(canvas: int, alpha: np.ndarray) -> np.ndarray:
+    """星盘底图等比缩放到 canvas 见方 + 给定 alpha。原图为方形，直接缩放不裁剪。"""
+    im = Image.open(SRC_BG).convert("RGB")
+    assert im.size[0] == im.size[1], f"背景底图应为方形，实际 {im.size}"
+    rgb = np.array(im.resize((canvas, canvas), Image.LANCZOS)).astype(np.float32)
     return np.dstack([rgb, alpha])
 
 
@@ -87,13 +86,13 @@ def main() -> None:
     book = load_book()
     print(f"源图紧包围盒 {book.size[0]}x{book.size[1]}")
 
-    layer_bg = solid(N, circle_alpha(N)).astype(np.uint8)
+    layer_bg = background(N, circle_alpha(N)).astype(np.uint8)
     layer_fg = place(book, N, BOOK_H_1024)
 
     flat = over(layer_bg.astype(np.float32), layer_fg.astype(np.float32))
 
     # adaptive 前景没有独立 background 层，底色必须烤进这一张，且满幅不透明
-    bg_full = solid(M, np.full((M, M), 255, np.float32))
+    bg_full = background(M, np.full((M, M), 255, np.float32))
     adaptive = over(bg_full, place(book, M, BOOK_H_1424).astype(np.float32))
 
     targets = {
@@ -105,7 +104,9 @@ def main() -> None:
         RES / "drawable" / "ic_launcher_foreground.png": adaptive,
     }
     for path, arr in targets.items():
-        Image.fromarray(arr).save(path)
+        # optimize=True 是无损的：像素不变，只是选更省的 PNG 过滤器/压缩参数。
+        # 星盘底图是噪点纹理，压不动多少，但也不该白占体积。
+        Image.fromarray(arr).save(path, optimize=True)
         print(f"写入 {path.relative_to(ROOT)}  {arr.shape[1]}x{arr.shape[0]}")
 
 
