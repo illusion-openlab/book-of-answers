@@ -4,7 +4,8 @@
 用法（仓库根目录）：  python3 art/build-icons.py
 依赖：pillow、numpy、opencv-python
 
-规范与 SDF 规则的依据见 art/README.md。生成物不要手改。
+构图刻意保持最简：**一层纯色背景 + 一层源图抠图**，不加渐变、不加光效。
+背景色是唯一可调项（[BG]）。规范与 SDF 规则的依据见 art/README.md。生成物不要手改。
 """
 from pathlib import Path
 
@@ -20,13 +21,9 @@ N = 1024          # 3D 图标层与平面 launcher 的画布
 M = 1424          # adaptive icon 前景的画布（沿用脚手架尺寸）
 SDF_RANGE = 31.0  # 实测：SDF 是内部距离场，31px 处线性截断
 
-# 取自宣传图色系（深藏青 (3,9,35)）但整体提亮 —— 规范要求避免纯黑/深黑，
+# 纯色背景。取自宣传图的深藏青 (3,9,35) 但提亮到亮度约 36 —— 规范要求避免纯黑/深黑，
 # 否则系统自动附加的高光与阴影没有可依附的亮度。
-C_IN = np.array([38, 50, 92], np.float32)    # 圆心
-C_OUT = np.array([13, 19, 41], np.float32)   # 圆周
-C_WARM = np.array([88, 58, 24], np.float32)  # 书下方的暖调氛围
-WARM_OFFSET = 0.10   # 暖光中心相对画布中心下移的比例
-WARM_SPREAD = 0.42   # 暖光半径占画布的比例
+BG = np.array([27, 36, 68], np.uint8)
 
 BOOK_H_1024 = 660    # 主体层里书的高度；半对角 435 ≈ 内切圆半径的 85%
 BOOK_H_1424 = 640    # adaptive 前景里书的高度；收在中央 66% 安全区内
@@ -50,23 +47,18 @@ def place(book: Image.Image, canvas: int, target_h: int) -> np.ndarray:
     return np.array(out)
 
 
-def gradient(canvas: int) -> np.ndarray:
-    """深蓝径向渐变 + 下方暖调氛围，返回 RGB float。"""
-    yy, xx = np.mgrid[0:canvas, 0:canvas].astype(np.float32)
-    c = (canvas - 1) / 2.0
-    t = np.clip(np.hypot(xx - c, yy - c) / (canvas / 2.0), 0, 1)
-    rgb = C_IN[None, None, :] * (1 - t)[..., None] + C_OUT[None, None, :] * t[..., None]
-    warm_d = np.hypot(xx - c, yy - (c + WARM_OFFSET * canvas)) / (WARM_SPREAD * canvas)
-    rgb += C_WARM[None, None, :] * (np.clip(1 - warm_d, 0, 1) ** 2.2)[..., None]
-    return np.clip(rgb, 0, 255)
-
-
 def circle_alpha(canvas: int) -> np.ndarray:
     """内切圆实心 alpha，边缘 1px 抗锯齿。圆外透明。"""
     yy, xx = np.mgrid[0:canvas, 0:canvas].astype(np.float32)
     c = (canvas - 1) / 2.0
     r = np.hypot(xx - c, yy - c)
     return np.clip((canvas / 2.0 - r) + 0.5, 0, 1) * 255.0
+
+
+def solid(canvas: int, alpha: np.ndarray) -> np.ndarray:
+    """纯色 RGB + 给定 alpha。"""
+    rgb = np.broadcast_to(BG, (canvas, canvas, 3)).astype(np.float32)
+    return np.dstack([rgb, alpha])
 
 
 def make_sdf(rgba: np.ndarray) -> np.ndarray:
@@ -90,13 +82,13 @@ def main() -> None:
     book = load_book()
     print(f"源图紧包围盒 {book.size[0]}x{book.size[1]}")
 
-    layer_bg = np.dstack([gradient(N), circle_alpha(N)]).astype(np.uint8)
+    layer_bg = solid(N, circle_alpha(N)).astype(np.uint8)
     layer_fg = place(book, N, BOOK_H_1024)
 
     flat = over(layer_bg.astype(np.float32), layer_fg.astype(np.float32))
 
     # adaptive 前景没有独立 background 层，底色必须烤进这一张，且满幅不透明
-    bg_full = np.dstack([gradient(M), np.full((M, M), 255, np.float32)])
+    bg_full = solid(M, np.full((M, M), 255, np.float32))
     adaptive = over(bg_full, place(book, M, BOOK_H_1424).astype(np.float32))
 
     targets = {
