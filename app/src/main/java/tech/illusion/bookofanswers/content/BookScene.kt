@@ -66,7 +66,7 @@ private const val BOOK_ASSET = "asset://book.usdz"
  * 注意这不是实体的 position —— 模型原点不在视觉中心上，且中心还随开合移动，
  * 实体位置要按当前开合程度把偏移补回去，见 [poseFor]。
  */
-private val BOOK_CENTER = Vector3(0f, -0.2f, 0.3f)
+private val BOOK_CENTER = Vector3(0f, -0.3f, 0.2f)
 
 /**
  * 模型缩放。
