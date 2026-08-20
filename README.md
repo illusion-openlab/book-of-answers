@@ -77,6 +77,27 @@ BookScene: book loaded, animated=true, skinnedMeshes=1, controllers=1, ...
 `skinnedMeshes` 与 `controllers` 必须相等 —— 不相等说明有蒙皮网格没被驱动，
 书会只翻开一部分。
 
+### 打签名包
+
+在 `local.properties`（**不进版本库**）中补上四行，指向你自己的 keystore：
+
+```properties
+RELEASE_STORE_FILE=/绝对路径/your-keystore.jks
+RELEASE_STORE_PASSWORD=你的密码
+RELEASE_KEY_ALIAS=你的别名
+RELEASE_KEY_PASSWORD=你的密码
+```
+
+然后：
+
+```bash
+./gradlew :app:assembleRelease
+apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
+```
+
+四个键缺任意一个时，构建不会失败，而是产出 `app-release-unsigned.apk`——
+这样没有密钥的人也能完整构建本项目。
+
 ## 工程结构
 
 ```

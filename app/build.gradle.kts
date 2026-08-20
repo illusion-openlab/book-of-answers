@@ -1,8 +1,29 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
 }
+
+/**
+ * 签名信息从 `local.properties` 读取，**不进版本库**（该文件已在 .gitignore 中）。
+ *
+ * 需要的四个键见 README「构建与运行 · 打签名包」。任一缺失时，release 构建
+ * 退化为产出未签名包（`app-release-unsigned.apk`），构建本身不会失败——
+ * 这样克隆本仓库的人无需持有密钥也能完整构建。
+ */
+val signingProps =
+    Properties().apply {
+        val f = rootProject.file("local.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+
+fun signingProp(key: String): String? = signingProps.getProperty(key)?.takeIf { it.isNotBlank() }
+
+val hasSigningConfig =
+    listOf("RELEASE_STORE_FILE", "RELEASE_STORE_PASSWORD", "RELEASE_KEY_ALIAS", "RELEASE_KEY_PASSWORD")
+        .all { signingProp(it) != null }
 
 android {
     namespace = "tech.illusion.bookofanswers"
@@ -19,8 +40,23 @@ android {
         ndk { abiFilters.add("arm64-v8a") }
     }
 
+    signingConfigs {
+        if (hasSigningConfig) {
+            create("release") {
+                storeFile = file(signingProp("RELEASE_STORE_FILE")!!)
+                storePassword = signingProp("RELEASE_STORE_PASSWORD")
+                keyAlias = signingProp("RELEASE_KEY_ALIAS")
+                keyPassword = signingProp("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // 缺少签名配置时留空，产出未签名包而不是让构建失败。
+            signingConfig = if (hasSigningConfig) signingConfigs.getByName("release") else null
+            // 保持关闭：Spatial SDK 依赖反射与 ECS 注册，开启混淆需额外的 keep 规则
+            // 并重新做一轮设备验证，不宜与打签名包一起动。
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
